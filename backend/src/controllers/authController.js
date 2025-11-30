@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import Settings from '../models/settingsModel.js';
 
 // --- HÀM TẠO TOKEN JWT BỔ SUNG TRƯỜNG 'role' ---
 const generateToken = (id, email, name, role) => {
@@ -28,6 +29,14 @@ const generateToken = (id, email, name, role) => {
 
 export const register = async (req, res) => {
     try {
+
+        // 1. ✅ KIỂM TRA CẤU HÌNH HỆ THỐNG
+        const settings = await Settings.findOne();
+        // Nếu có settings và allowRegistrations = false -> Chặn luôn
+        if (settings && settings.allowRegistrations === false) {
+            return res.status(403).json({ message: "Hệ thống đang tạm ngưng đăng ký tài khoản mới." });
+        }
+
         const { name, email, password } = req.body;
         
         if (!name || !email || !password) {
@@ -79,6 +88,8 @@ export const login = async (req, res) => {
 
         // 1. Tìm người dùng bằng email và lấy cả mật khẩu
         const user = await User.findOne({ email }).select('+password');
+
+        console.log("Role thực tế trong DB là:", `'${user.role}'`);
         
         if (!user) {
             return res.status(401).json({ message: "Email hoặc mật khẩu không đúng" });

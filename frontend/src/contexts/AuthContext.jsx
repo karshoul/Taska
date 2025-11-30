@@ -29,14 +29,13 @@ export const AuthProvider = ({ children }) => {
     }
 
     setIsLoading(false);
-    console.log("🔁 Cập nhật AuthContext:", { token, role });
   };
 
   // 🔁 Kiểm tra trạng thái ban đầu khi load trang
   useEffect(() => {
     checkAuthStatus();
 
-    // 🪄 Theo dõi thay đổi của localStorage (khi user đăng nhập/đăng xuất)
+    // 🪄 Theo dõi thay đổi của localStorage
     const handleStorageChange = () => checkAuthStatus();
     window.addEventListener('storage', handleStorageChange);
 
@@ -53,8 +52,9 @@ export const AuthProvider = ({ children }) => {
     setUserRole(role);
     toast.success("Đăng nhập thành công!");
 
-    // 👉 Chuyển hướng tùy theo vai trò
-    if (role === 'admin') {
+    // 👉 SỬA LỖI TẠI ĐÂY: Cập nhật điều hướng cho Super Admin
+    // Nếu là admin HOẶC super_admin thì đều vào trang quản trị
+    if (role === 'admin' || role === 'super_admin') {
       navigate('/admin');
     } else {
       navigate('/app');
@@ -73,9 +73,9 @@ export const AuthProvider = ({ children }) => {
 
   const value = { isAuthenticated, userRole, isLoading, login, logout };
 
-  // 🕓 Loading UI trong khi kiểm tra trạng thái đăng nhập
+  // 🕓 Loading UI
   if (isLoading) {
-    return null;
+    return null; 
   }
 
   return (

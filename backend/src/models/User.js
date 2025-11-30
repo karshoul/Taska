@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';      // ✅ Import bcryptjs
 import jwt from 'jsonwebtoken';   // ✅ Import jsonwebtoken
 
+console.log("✅ ĐÃ LOAD MODEL USER MỚI NHẤT");
 const userSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -23,7 +24,7 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['user', 'admin'],
+        enum: ['user', 'admin', 'super_admin'],
         default: 'user',
     },
     googleId: {

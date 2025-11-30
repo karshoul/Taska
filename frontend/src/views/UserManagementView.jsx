@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from "react";
-import { createPortal } from "react-dom"; // ✅ Import createPortal
+import { createPortal } from "react-dom";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trash2, Loader2, ArrowUp, ArrowDown, UserX, UserCheck, Search, X } from "lucide-react"; // ✅ Thêm X
+import { Trash2, Loader2, ArrowUp, ArrowDown, UserX, UserCheck, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 const ITEMS_PER_PAGE = 10;
 
-// ✅ COMPONENT MỚI: Modal Xác nhận (Chung)
+// --- COMPONENT MODAL (GIỮ NGUYÊN) ---
 const ConfirmationModal = ({ title, message, onConfirm, onCancel, isSubmitting, confirmText, confirmVariant = "red" }) => {
     const backdropVariants = { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } };
     const modalVariants = { initial: { opacity: 0, scale: 0.9 }, animate: { opacity: 1, scale: 1 }, exit: { opacity: 0, scale: 0.9 } };
@@ -50,18 +50,18 @@ const ConfirmationModal = ({ title, message, onConfirm, onCancel, isSubmitting, 
     );
 };
 
-const UserManagementView = ({ users, refreshUsers }) => {
+const UserManagementView = ({ users, refreshUsers, currentUserRole }) => {
     const [currentPage, setCurrentPage] = useState(1);
     const [sortBy, setSortBy] = useState("createdAt");
     const [sortOrder, setSortOrder] = useState("desc");
     const [searchTerm, setSearchTerm] = useState("");
     const [updatingUserId, setUpdatingUserId] = useState(null);
 
-    // ✅ State mới cho Modals
-    const [userToToggle, setUserToToggle] = useState(null); // User đang chờ vô hiệu hóa
-    const [userToDelete, setUserToDelete] = useState(null); // User đang chờ xóa
+    // State cho Modals
+    const [userToToggle, setUserToToggle] = useState(null);
+    const [userToDelete, setUserToDelete] = useState(null);
 
-    // ... (logic lọc, sắp xếp, phân trang không đổi)
+    // Logic lọc & phân trang
     const sortedAndPagedUsers = useMemo(() => {
         if (!users || users.length === 0) return [];
         const filtered = users.filter(u => u.name?.toLowerCase().includes(searchTerm.toLowerCase().trim()));
@@ -78,12 +78,11 @@ const UserManagementView = ({ users, refreshUsers }) => {
 
     const totalPages = Math.ceil((users?.filter(u => u.name?.toLowerCase().includes(searchTerm.toLowerCase().trim())).length || 0) / ITEMS_PER_PAGE);
     
-    // ... (các hàm handlePageChange, handleSort, renderSortIcon không đổi)
     const handlePageChange = (page) => { if (page > 0 && page <= totalPages) setCurrentPage(page); };
     const handleSort = (key) => { if (sortBy === key) { setSortOrder(sortOrder === "asc" ? "desc" : "asc"); } else { setSortBy(key); setSortOrder("asc"); } };
     const renderSortIcon = (key) => { if (sortBy !== key) return null; return sortOrder === "asc" ? <ArrowUp className="w-4 h-4 ml-1 inline" /> : <ArrowDown className="w-4 h-4 ml-1 inline" />; };
 
-    // ✅ Sửa lại hàm handleToggleStatus (chỉ gọi API, không còn confirm)
+    // --- ACTIONS ---
     const handleToggleStatus = async () => {
         if (!userToToggle) return;
         const newStatus = userToToggle.isActive === false ? true : false;
@@ -99,11 +98,10 @@ const UserManagementView = ({ users, refreshUsers }) => {
             toast.error(error.response?.data?.message || `Không thể ${actionText} tài khoản.`);
         } finally {
             setUpdatingUserId(null);
-            setUserToToggle(null); // Đóng modal
+            setUserToToggle(null);
         }
     };
 
-    // ✅ Sửa lại hàm handleDelete (chỉ gọi API, không còn confirm)
     const handleDelete = async () => {
         if (!userToDelete) return;
         setUpdatingUserId(userToDelete._id);
@@ -116,7 +114,7 @@ const UserManagementView = ({ users, refreshUsers }) => {
             toast.error(error.response?.data?.message || "Không thể xóa người dùng.");
         } finally {
             setUpdatingUserId(null);
-            setUserToDelete(null); // Đóng modal
+            setUserToDelete(null);
         }
     };
 
@@ -168,28 +166,58 @@ const UserManagementView = ({ users, refreshUsers }) => {
                                 >
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{user.name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.role === "admin" ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>{user.role}</span></td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                            ${user.role === "super_admin" ? "bg-purple-100 text-purple-800" 
+                                            : user.role === "admin" ? "bg-red-100 text-red-800" 
+                                            : "bg-green-100 text-green-800"}`}>
+                                            {user.role}
+                                        </span>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm"><span className={`font-semibold ${user.isActive === false ? "text-red-500" : "text-green-600"}`}>{user.isActive === false ? "Vô hiệu hóa" : "Hoạt động"}</span></td>
+                                    
+                                    {/* --- CỘT HÀNH ĐỘNG --- */}
                                     <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                                         <div className="flex justify-center items-center gap-3">
-                                            {/* ✅ SỬA LẠI: Mở modal khi bấm */}
+                                            
+                                            {/* NÚT KHÓA/MỞ KHÓA */}
                                             <button
                                                 onClick={() => setUserToToggle(user)}
-                                                disabled={updatingUserId || user.role === "admin"}
+                                                disabled={
+                                                    updatingUserId || 
+                                                    user.role === "super_admin" || 
+                                                    (user.role === "admin" && currentUserRole !== "super_admin")
+                                                }
                                                 className="text-yellow-600 hover:text-yellow-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                title={user.role === "admin" ? "Không thể thay đổi" : (user.isActive === false ? "Kích hoạt lại" : "Vô hiệu hóa")}
+                                                title={user.role === "super_admin" ? "Không thể tác động Super Admin" : "Thay đổi trạng thái"}
                                             >
                                                 {updatingUserId === user._id ? <Loader2 className="w-5 h-5 animate-spin" /> : (user.isActive === false ? <UserCheck className="w-5 h-5" /> : <UserX className="w-5 h-5" />)}
                                             </button>
-                                            {/* ✅ SỬA LẠI: Mở modal khi bấm */}
-                                            <button
-                                                onClick={() => setUserToDelete(user)}
-                                                disabled={updatingUserId || user.role === "admin"}
-                                                className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                title={user.role === "admin" ? "Không thể xóa Admin" : "Xóa người dùng"}
-                                            >
-                                                {updatingUserId === user._id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
-                                            </button>
+
+                                            {/* ✅ ĐÃ SỬA: LOGIC NÚT XÓA CHO PHÉP ADMIN XÓA USER */}
+                                            {(currentUserRole === "super_admin" || currentUserRole === "admin") && (
+                                                <button
+                                                    onClick={() => setUserToDelete(user)}
+                                                    disabled={
+                                                        updatingUserId || 
+                                                        user.role === "super_admin" || // 1. Không bao giờ xóa Super Admin
+                                                        (currentUserRole === "admin" && user.role === "admin") // 2. Admin không thể xóa Admin khác
+                                                    }
+                                                    className={`disabled:opacity-50 disabled:cursor-not-allowed ${
+                                                        // Đổi màu nút thành xám nếu bị disable (để người dùng dễ hiểu)
+                                                        (currentUserRole === "admin" && user.role === "admin") || user.role === "super_admin"
+                                                        ? "text-gray-300" 
+                                                        : "text-red-600 hover:text-red-900"
+                                                    }`}
+                                                    title={
+                                                        user.role === "super_admin" ? "Không thể xóa Super Admin" : 
+                                                        (currentUserRole === "admin" && user.role === "admin" ? "Bạn không thể xóa Admin khác" : "Xóa người dùng")
+                                                    }
+                                                >
+                                                    {updatingUserId === user._id ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                                                </button>
+                                            )}
+                                            
                                         </div>
                                     </td>
                                 </motion.tr>
@@ -199,53 +227,32 @@ const UserManagementView = ({ users, refreshUsers }) => {
                 </table>
             </div>
 
-             {totalPages > 1 && (
-
-        <div className="flex justify-between items-center mt-6">
-
-          <button
-
-            onClick={() => handlePageChange(currentPage - 1)}
-
-            disabled={currentPage === 1}
-
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50"
-
-          >
-
-            Trang trước
-
-          </button>
-
-          <span className="text-sm text-gray-600">
-
-            Trang {currentPage} / {totalPages}
-
-          </span>
-
-          <button
-
-            onClick={() => handlePageChange(currentPage + 1)}
-
-            disabled={currentPage === totalPages}
-
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50"
-
-          >
-
-            Trang sau
-
-          </button>
-
-        </div>
-
-      )}
+            {/* PHÂN TRANG */}
+            {totalPages > 1 && (
+                <div className="flex justify-between items-center mt-6">
+                    <button
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50"
+                    >
+                        Trang trước
+                    </button>
+                    <span className="text-sm text-gray-600">Trang {currentPage} / {totalPages}</span>
+                    <button
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-50"
+                    >
+                        Trang sau
+                    </button>
+                </div>
+            )}
 
             {sortedAndPagedUsers.length === 0 && (
                 <p className="text-center py-8 text-gray-500">Không tìm thấy người dùng nào.</p>
             )}
 
-            {/* ✅ RENDER CÁC MODAL */}
+            {/* MODALS */}
             {userToToggle && (
                 <ConfirmationModal
                     title={userToToggle.isActive ? "Vô hiệu hóa tài khoản?" : "Kích hoạt tài khoản?"}

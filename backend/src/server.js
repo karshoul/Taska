@@ -9,6 +9,9 @@ import taskRoute from './routes/taskRouters.js';
 import authRoute from './routes/authRoutes.js';
 import adminRoute from './routes/adminRoutes.js';
 import projectRoute from './routes/projectRoutes.js'
+import aiRoutes from './routes/aiRoutes.js'
+import startCronJob from '../services/cronService.js';
+import notificationRoutes from '../src/routes/notificationRoutes.js'
 
 // ✅ BƯỚC 1: Import các hàm/middleware mới
 import './config/passport.js'; 
@@ -33,7 +36,9 @@ app.use("/api/auth", authRoute);
 app.use("/api/tasks", taskRoute);
 app.use("/api/admin", adminRoute);
 app.use("/api/projects", projectRoute);
+app.use('/api/notifications', notificationRoutes);
 
+app.use('/api/ai', aiRoutes);
 // ✅ BƯỚC 2: Thêm Middleware Xử lý Lỗi
 // Phải được đặt SAU KHI định nghĩa các routes
 app.use(notFound); // Bắt lỗi 404 cho các route không tồn tại
@@ -48,6 +53,7 @@ const startServer = async () => {
             
             // Khởi động dịch vụ Cron Job sau khi server đã sẵn sàng
             startCronJobs();
+            startCronJob();
         });
     } catch (error) {
         console.error("❌ Không thể khởi động server:", error);

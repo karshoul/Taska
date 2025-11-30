@@ -1,9 +1,9 @@
 import React, { useState } from "react";
-// eslint-disable-next-line no-unused-vars
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import api from "@/lib/axios";
 import { toast } from "sonner";
+import { CheckSquare, UserPlus, User, Mail, Lock } from "lucide-react";
 
 const RegisterPage = () => {
   const navigate = useNavigate();
@@ -21,11 +21,10 @@ const RegisterPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    console.log("Dữ liệu gửi đi:", form); 
     try {
       await api.post("/auth/register", form);
-      toast.success("Đăng ký thành công 🎉");
-      navigate("/login"); // chuyển sang đăng nhập
+      toast.success("Đăng ký thành công! 🎉");
+      navigate("/login"); 
     } catch (error) {
       console.error(error);
       toast.error(error.response?.data?.message || "Đăng ký thất bại ❌");
@@ -35,99 +34,116 @@ const RegisterPage = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#0a0a0a] relative flex items-center justify-center">
-  {/* Cosmic Aurora */}
-  <div
-    className="absolute inset-0 z-0"
-    style={{
-      backgroundImage: `
-        radial-gradient(ellipse at 20% 30%, rgba(56, 189, 248, 0.4) 0%, transparent 60%),
-        radial-gradient(ellipse at 80% 70%, rgba(139, 92, 246, 0.3) 0%, transparent 70%),
-        radial-gradient(ellipse at 60% 20%, rgba(236, 72, 153, 0.25) 0%, transparent 50%),
-        radial-gradient(ellipse at 40% 80%, rgba(34, 197, 94, 0.2) 0%, transparent 65%)
-      `,
-    }}
-  />
+    <div className="min-h-screen w-full flex items-center justify-center font-sans bg-[#F8F9FC] relative overflow-hidden selection:bg-indigo-100">
+      
+      {/* BACKGROUND DECORATIONS (Đồng bộ với Login) */}
+      <div className="absolute top-[-10%] left-[-5%] w-[600px] h-[600px] bg-purple-300/30 rounded-full blur-[120px]" />
+      <div className="absolute bottom-[10%] right-[-10%] w-[500px] h-[500px] bg-blue-300/20 rounded-full blur-[120px]" />
 
-  {/* Khối chứa form */}
-  <motion.div
-    className="relative z-10 bg-white shadow-xl rounded-2xl p-8 w-full max-w-md"
-    initial={{ opacity: 0, y: -40 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.6 }}
-  >
-    {/* Tiêu đề */}
-    <motion.h1
-      className="text-3xl font-bold text-center mb-6 text-purple-600"
-      initial={{ scale: 0.8 }}
-      animate={{ scale: 1 }}
-      transition={{ duration: 0.4 }}
-    >
-      ✨ Đăng ký tài khoản
-    </motion.h1>
-
-    {/* Form */}
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <motion.div whileFocus={{ scale: 1.02 }}>
-        <label className="block mb-1 font-medium">Tên đăng nhập</label>
-        <input
-          type="text"
-          name="name"
-          value={form.name}
-          onChange={handleChange}
-          required
-          className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-400"
-        />
-      </motion.div>
-
-      <motion.div whileFocus={{ scale: 1.02 }}>
-        <label className="block mb-1 font-medium">Email</label>
-        <input
-          type="email"
-          name="email"
-          value={form.email}
-          onChange={handleChange}
-          required
-          className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-400"
-        />
-      </motion.div>
-
-      <motion.div whileFocus={{ scale: 1.02 }}>
-        <label className="block mb-1 font-medium">Mật khẩu</label>
-        <input
-          type="password"
-          name="password"
-          value={form.password}
-          onChange={handleChange}
-          required
-          className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-400"
-        />
-      </motion.div>
-
-      <motion.button
-        type="submit"
-        disabled={loading}
-        className="w-full bg-purple-600 text-white py-3 rounded-lg font-semibold hover:bg-purple-700 transition disabled:opacity-50"
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
+      <motion.div
+        className="relative z-10 w-full max-w-md p-8 bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-white/50"
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
       >
-        {loading ? "⏳ Đang đăng ký..." : "Đăng ký"}
-      </motion.button>
-    </form>
+        {/* Header: Logo & Title */}
+        <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-lg mb-4">
+                <CheckSquare className="w-7 h-7 text-white" />
+            </div>
+            <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">Tạo tài khoản mới</h2>
+            <p className="text-gray-500 mt-2 text-sm">Bắt đầu hành trình quản lý công việc hiệu quả.</p>
+        </div>
 
-    {/* Link chuyển trang */}
-    <p className="text-sm text-center text-gray-600 mt-6">
-      Đã có tài khoản?{" "}
-      <button
-        onClick={() => navigate("/login")}
-        className="text-purple-600 font-semibold hover:underline"
-      >
-        Đăng nhập ngay
-      </button>
-    </p>
-  </motion.div>
-</div>
+        {/* Register Form */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          
+          {/* Tên đăng nhập */}
+          <div className="relative">
+            <label className="block text-sm font-bold text-gray-700 mb-1.5 ml-1">Tên hiển thị</label>
+            <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <User className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                    type="text"
+                    name="name"
+                    value={form.name}
+                    onChange={handleChange}
+                    placeholder="Nhập tên của bạn"
+                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white transition-all outline-none text-gray-800 placeholder-gray-400 font-medium"
+                    required
+                />
+            </div>
+          </div>
 
+          {/* Email */}
+          <div className="relative">
+            <label className="block text-sm font-bold text-gray-700 mb-1.5 ml-1">Email</label>
+            <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Mail className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                    type="email"
+                    name="email"
+                    value={form.email}
+                    onChange={handleChange}
+                    placeholder="name@example.com"
+                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white transition-all outline-none text-gray-800 placeholder-gray-400 font-medium"
+                    required
+                />
+            </div>
+          </div>
+
+          {/* Mật khẩu */}
+          <div className="relative">
+            <label className="block text-sm font-bold text-gray-700 mb-1.5 ml-1">Mật khẩu</label>
+            <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                    type="password"
+                    name="password"
+                    value={form.password}
+                    onChange={handleChange}
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white transition-all outline-none text-gray-800 font-medium"
+                    required
+                />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+                <span className="flex items-center gap-2">
+                    <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span>
+                    Đang xử lý...
+                </span>
+            ) : (
+                <>
+                    <UserPlus className="w-5 h-5" />
+                    Đăng ký ngay
+                </>
+            )}
+          </button>
+        </form>
+
+        {/* Footer Link */}
+        <p className="mt-8 text-center text-sm text-gray-500">
+          Đã có tài khoản?{" "}
+          <Link to="/login" className="font-bold text-indigo-600 hover:text-indigo-800 transition-colors hover:underline">
+            Đăng nhập
+          </Link>
+        </p>
+
+      </motion.div>
+    </div>
   );
 };
 
