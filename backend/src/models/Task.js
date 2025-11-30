@@ -55,6 +55,15 @@ const taskSchema = new mongoose.Schema(
         ref: 'Project', // Tham chiếu đến model 'Project' chúng ta sắp tạo
         default: null,  // Cho phép task không thuộc dự án nào
     },
+    isReminded: {
+        type: Boolean,
+        default: false
+    },
+    priority: {
+        type: String,
+        enum: ['low', 'medium', 'high'], // Chỉ chấp nhận 3 giá trị này
+        default: 'medium'
+    },
     
   },
   {

@@ -1,4 +1,5 @@
 import Task from "../models/Task.js";
+import ExcelJS from 'exceljs';
 
 // 📌 Lấy tất cả task
 export const getAllTasks = async (req, res) => {
@@ -67,26 +68,30 @@ export const getAllTasks = async (req, res) => {
 // 📌 Tạo task mới
 export const createTask = async (req, res) => {
   try {
-    // ❌ Đã xóa 'tags'
-    const { title, description, deadline, status, recurrence, project } = req.body;
+    // 1. ✅ THÊM 'priority' VÀO DANH SÁCH NHẬN DỮ LIỆU
+    const { title, description, deadline, status, recurrence, project, priority } = req.body;
 
     if (!title) {
       return res.status(400).json({ message: "Tiêu đề không được để trống" });
     }
 
+    // --- TRƯỜNG HỢP 1: CÔNG VIỆC LẶP LẠI ---
     if (recurrence && recurrence.frequency && recurrence.frequency !== 'none') {
       const firstInstanceDate = deadline ? new Date(deadline) : new Date();
       let nextDate = new Date(firstInstanceDate);
+      
+      // Tính toán ngày lặp tiếp theo
       if (recurrence.frequency === 'daily') nextDate.setDate(nextDate.getDate() + 1);
       if (recurrence.frequency === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
       if (recurrence.frequency === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
 
+      // Tạo Task Mẫu (Template) để sinh ra các task sau này
       const templateTask = new Task({
         user: req.user._id,
         title,
         description,
         project,
-        // ❌ Đã xóa 'tags'
+        priority: priority || 'medium', // ✅ LƯU PRIORITY CHO TEMPLATE
         isTemplate: true,
         recurrence: recurrence,
         nextInstanceDate: nextDate,
@@ -94,12 +99,13 @@ export const createTask = async (req, res) => {
       });
       await templateTask.save();
 
+      // Tạo Task Đầu tiên (Instance 1) để hiển thị ngay
       const firstInstance = new Task({
         user: req.user._id,
         title,
         description,
         project,
-        // ❌ Đã xóa 'tags'
+        priority: priority || 'medium', // ✅ LƯU PRIORITY CHO TASK ĐẦU TIÊN
         deadline: firstInstanceDate,
         status: status || 'active',
         isTemplate: false,
@@ -110,12 +116,13 @@ export const createTask = async (req, res) => {
       res.status(201).json(newInstance);
 
     } else {
+      // --- TRƯỜNG HỢP 2: CÔNG VIỆC BÌNH THƯỜNG (KHÔNG LẶP) ---
       const task = new Task({
         user: req.user._id,
         title,
         description,
         project,
-        // ❌ Đã xóa 'tags'
+        priority: priority || 'medium', // ✅ QUAN TRỌNG: LƯU PRIORITY TẠI ĐÂY
         deadline: deadline || null,
         status: status || 'active',
         isTemplate: false,
@@ -134,8 +141,8 @@ export const createTask = async (req, res) => {
 // 📌 Cập nhật task
 export const updateTask = async (req, res) => {
   try {
-    // ❌ Đã xóa 'tags'
-    const { title, description, deadline, status, completedAt, project } = req.body;
+    // 1. ✅ THÊM 'priority' VÀO DANH SÁCH NHẬN
+    const { title, description, deadline, status, completedAt, project, priority } = req.body;
 
     const updateData = {};
     if (title !== undefined) updateData.title = title;
@@ -144,7 +151,9 @@ export const updateTask = async (req, res) => {
     if (status !== undefined) updateData.status = status;
     if (completedAt !== undefined) updateData.completedAt = completedAt;
     if (project !== undefined) updateData.project = project;
-    // ❌ Đã xóa 'tags'
+    
+    // 2. ✅ THÊM DÒNG NÀY ĐỂ CẬP NHẬT PRIORITY
+    if (priority !== undefined) updateData.priority = priority;
 
     const updatedTask = await Task.findOneAndUpdate(
       { _id: req.params.id, user: req.user._id },
@@ -180,4 +189,77 @@ export const deleteTask = async (req, res) => {
     console.error("Lỗi khi gọi deleteTask", error);
     res.status(500).json({ message: "Lỗi hệ thống" });
   }
+};
+
+// Lấy 1 task theo ID
+export const getTaskById = async (req, res) => {
+    try {
+        const task = await Task.findById(req.params.id).populate('project');
+        if (!task) return res.status(404).json({ message: "Không tìm thấy công việc" });
+        
+        // Kiểm tra quyền sở hữu (Security)
+        if (task.user.toString() !== req.user._id.toString()) {
+             return res.status(403).json({ message: "Không có quyền truy cập" });
+        }
+
+        res.status(200).json(task);
+    } catch (error) {
+        res.status(500).json({ message: "Lỗi server" });
+    }
+};
+
+// 📥 XUẤT FILE EXCEL CHO USER (Chỉ lấy task của chính họ)
+export const exportMyTasksToExcel = async (req, res) => {
+    try {
+        // 1. Lấy ID người dùng đang đăng nhập
+        const userId = req.user._id;
+
+        // 2. Tìm task của RIÊNG người dùng đó
+        const tasks = await Task.find({ user: userId }).sort({ createdAt: -1 });
+
+        // 3. Tạo File Excel
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Công việc của tôi');
+
+        // 4. Định nghĩa cột
+        worksheet.columns = [
+            { header: 'Tiêu đề', key: 'title', width: 30 },
+            { header: 'Mô tả', key: 'desc', width: 40 },
+            { header: 'Trạng thái', key: 'status', width: 15 },
+            { header: 'Độ ưu tiên', key: 'priority', width: 15 },
+            { header: 'Hạn chót', key: 'deadline', width: 20 },
+            { header: 'Ngày tạo', key: 'createdAt', width: 20 }
+        ];
+
+        // 5. Thêm dữ liệu
+        tasks.forEach(task => {
+            worksheet.addRow({
+                title: task.title,
+                desc: task.description || '',
+                status: task.status === 'complete' ? 'Hoàn thành' : 'Đang làm',
+                priority: task.priority === 'high' ? 'Cao 🔥' : task.priority === 'low' ? 'Thấp ☕' : 'Trung bình ⚡',
+                deadline: task.deadline ? new Date(task.deadline).toLocaleString('vi-VN') : '',
+                createdAt: new Date(task.createdAt).toLocaleString('vi-VN')
+            });
+        });
+
+        // Style dòng tiêu đề cho đẹp
+        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF6B21A8' } // Màu tím giống theme web của bạn
+        };
+
+        // 6. Trả về file
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=my_tasks.xlsx');
+
+        await workbook.xlsx.write(res);
+        res.end();
+
+    } catch (error) {
+        console.error("Export Error:", error);
+        res.status(500).json({ message: "Lỗi khi xuất file Excel" });
+    }
 };

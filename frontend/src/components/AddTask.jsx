@@ -2,11 +2,15 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import api from "@/lib/axios";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Check, Calendar, ChevronDown, Clock, Repeat, Folder, PlusCircle, X, Trash2 } from "lucide-react";
+// ✅ Import thêm icon Sparkles
+import { Loader2, Check, Calendar, ChevronDown, Clock, Repeat, Folder, PlusCircle, X, Trash2, Sparkles, Flame, Zap, Coffee } from "lucide-react";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { format } from "date-fns";
 import { createPortal } from "react-dom";
+
+// ✅ Import Modal AI vừa tạo
+import AIGeneratorModal from "../components/AIGeneratorModal";
 
 // --- Custom Component: Select có Animation ---
 const CustomSelect = ({ options, selected, onSelect, placeholder, onDelete }) => {
@@ -200,7 +204,11 @@ const CreateProjectModal = ({ onClose, onSubmit }) => {
     );
 };
 
-// ❌ XÓA BỎ Component DeleteProjectModal (vì nó đã được chuyển lên HomePage)
+const PRIORITY_OPTIONS = [
+    { value: 'high', label: 'Cao', icon: Flame, color: 'bg-red-100 text-red-600 border-red-200' },
+    { value: 'medium', label: 'Trung bình', icon: Zap, color: 'bg-yellow-100 text-yellow-600 border-yellow-200' },
+    { value: 'low', label: 'Thấp', icon: Coffee, color: 'bg-blue-100 text-blue-600 border-blue-200' }
+];
 
 // --- Component AddTask Chính ---
 const AddTask = ({ 
@@ -217,17 +225,18 @@ const AddTask = ({
     const [recurrence, setRecurrence] = useState("none");
     const [buttonState, setButtonState] = useState("idle");
     const [titleError, setTitleError] = useState(false);
+
+    const [priority, setPriority] = useState("medium");
     
     const [selectedProject, setSelectedProject] = useState("none");
     const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-    
-    // ❌ XÓA State `projectToDelete`
+
+    // ✅ Thêm state cho Modal AI
+    const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
     const shakeVariants = { shake: { x: [0, -8, 8, -8, 8, 0], transition: { duration: 0.4 } }, stop: { x: 0 } };
     
     useEffect(() => { if (title.trim()) setTitleError(false); }, [title]);
-
-    // ❌ Xóa `fetchProjects` và `useEffect` của nó
 
     const handleCreateProject = async (newProjectName) => {
         const newProject = await onCreateProject(newProjectName); 
@@ -236,8 +245,32 @@ const AddTask = ({
             setIsProjectModalOpen(false);
         }
     };
-    
-    // ❌ Xóa `handleDeleteProject` và `confirmDeleteProject`
+
+    // ✅ HÀM MỚI: Xử lý thêm hàng loạt task từ AI
+    const handleAddTasksFromAI = async (taskTitles) => {
+        try {
+            // Dùng Promise.all để tạo nhiều task cùng lúc
+            // Lưu ý: Dùng instance 'api' của bạn thay vì axios trần để đảm bảo auth header
+            const createPromises = taskTitles.map(taskTitle => 
+                api.post("/tasks", { 
+                    title: taskTitle,
+                    description: "Được tạo tự động bởi AI ✨",
+                    status: "active", 
+                    recurrence: { frequency: "none" },
+                    // Nếu đang chọn dự án nào thì gán task vào dự án đó luôn
+                    project: selectedProject === "none" ? null : selectedProject
+                })
+            );
+
+            await Promise.all(createPromises);
+
+            toast.success(`✨ Đã thêm ${taskTitles.length} công việc từ AI!`);
+            handleNewTaskAdded(); // Refresh lại list bên ngoài
+        } catch (error) {
+            console.error(error);
+            toast.error("Lỗi khi lưu công việc từ AI.");
+        }
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -263,7 +296,8 @@ const AddTask = ({
                 deadline: deadlineISO, 
                 status, 
                 recurrence: { frequency: recurrence },
-                project: selectedProject === "none" ? null : selectedProject
+                project: selectedProject === "none" ? null : selectedProject,
+                priority
             });
             setButtonState("success");
             toast.success("✅ Thêm công việc thành công!");
@@ -273,7 +307,8 @@ const AddTask = ({
             setDeadlineTime("");
             setStatus("active");
             setRecurrence("none");
-            setSelectedProject("none");
+            setPriority("medium");
+            // Giữ nguyên project đang chọn để nhập tiếp cho tiện
             handleNewTaskAdded(); 
             setTimeout(() => setButtonState("idle"), 1500);
         } catch (error) {
@@ -292,8 +327,37 @@ const AddTask = ({
 
     return (
         <div className="bg-white/70 backdrop-blur-md rounded-xl shadow-lg p-6 space-y-4 border border-purple-100">
-            <h3 className="text-xl font-semibold text-purple-700 mb-2">➕ Thêm công việc mới</h3>
+            
+            {/* ✅ SỬA HEADER: Thêm nút AI vào cạnh tiêu đề */}
+            <div className="flex justify-between items-center mb-2">
+                <h3 className="text-xl font-semibold text-purple-700">➕ Thêm công việc</h3>
+            </div>
+
+            {/* ✅ CHỌN MỨC ĐỘ ƯU TIÊN (Giao diện nút bấm) */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Mức độ ưu tiên</label>
+                    <div className="grid grid-cols-3 gap-2">
+                        {PRIORITY_OPTIONS.map((option) => (
+                            <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => setPriority(option.value)}
+                                className={`
+                                    flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-bold border transition-all
+                                    ${priority === option.value 
+                                        ? `${option.color} ring-2 ring-offset-1 ring-gray-200` 
+                                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}
+                                `}
+                            >
+                                <option.icon className="w-3.5 h-3.5" />
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
             <form onSubmit={handleSubmit} className="space-y-4">
+                {/* ... (Phần Form Input giữ nguyên không đổi) ... */}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Tên công việc</label>
                     <motion.input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Nhập tên công việc..." className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none ${titleError ? 'border-red-500 ring-red-300' : 'border-gray-300'}`} variants={shakeVariants} animate={titleError ? "shake" : "stop"} whileFocus={{ scale: 1.02 }} />
@@ -324,7 +388,7 @@ const AddTask = ({
                         selected={selectedProject}
                         onSelect={setSelectedProject}
                         placeholder="Chọn dự án..."
-                        onDelete={onDeleteProject} // ✅ Truyền thẳng prop
+                        onDelete={onDeleteProject}
                     />
                 </div>
                 
@@ -363,7 +427,12 @@ const AddTask = ({
                 )}
             </AnimatePresence>
             
-            {/* ❌ XÓA BỎ KHỐI RENDER DeleteProjectModal */}
+            {/* ✅ RENDER MODAL AI */}
+            <AIGeneratorModal 
+                isOpen={isAIModalOpen}
+                onClose={() => setIsAIModalOpen(false)}
+                onAddTasks={handleAddTasksFromAI}
+            />
             
         </div>
     );

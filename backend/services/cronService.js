@@ -1,6 +1,8 @@
 import cron from 'node-cron';
 // ❗ Đảm bảo đường dẫn này đúng với cấu trúc dự án của bạn
 import Task from '../src/models/Task.js'; 
+import { sendReminderEmail } from './emailService.js';
+import { createNotificationInternal }  from '../src/controllers/notificationController.js';
 
 // Hàm tính ngày tiếp theo (Code của bạn đã đúng)
 const getNextDate = (currentDate, frequency) => {
@@ -77,3 +79,65 @@ export const startCronJobs = () => {
     
     console.log('✅ Dịch vụ Cron đã được khởi động. Sẽ chạy lúc 00:00 (GMT+7).');
 };
+
+const startCronJob = () => {
+    console.log("⏰ Cron Job đã khởi động: Quét task mỗi phút...");
+
+    cron.schedule('* * * * *', async () => {
+        try {
+            const now = new Date();
+            const thirtyMinutesLater = new Date(now.getTime() + 30 * 60000);
+
+            // Tìm các task:
+            // 1. Chưa xong (active)
+            // 2. Chưa được nhắc (isReminded: false)
+            // 3. Hạn chót <= 30 phút nữa (Tính cả quá khứ và tương lai gần)
+            const tasksToRemind = await Task.find({
+                status: 'active',
+                deadline: { 
+                    $ne: null,             // Deadline không được null
+                    $lte: thirtyMinutesLater // Nhỏ hơn hoặc bằng 30 phút nữa (Bao gồm cả quá khứ)
+                },
+                isReminded: false 
+            }).populate('user');
+
+            if (tasksToRemind.length > 0) {
+                console.log(`🔍 Tìm thấy ${tasksToRemind.length} task cần thông báo.`);
+                
+                for (const task of tasksToRemind) {
+                    if (task.user) {
+                        // Kiểm tra xem là "Sắp hết hạn" hay "Đã quá hạn"
+                        const isOverdue = new Date(task.deadline) < now;
+                        
+                        const title = isOverdue ? "⚠️ Đã quá hạn!" : "⏰ Sắp hết hạn!";
+                        const message = isOverdue 
+                            ? `Công việc "${task.title}" đã quá hạn vào ${new Date(task.deadline).toLocaleString('vi-VN')}.`
+                            : `Công việc "${task.title}" sắp đến hạn chót.`;
+
+                        // 1. Gửi mail
+                        if (task.user.email) {
+                            await sendReminderEmail(task.user.email, task.user.name, task.title, task.deadline);
+                        }
+                        
+                        // 2. Tạo thông báo Web
+                        await createNotificationInternal({
+                            userId: task.user._id,
+                            title: title,
+                            message: message,
+                            type: isOverdue ? 'error' : 'warning', // Đỏ nếu quá hạn, Vàng nếu sắp
+                            link: `/app?taskId=${task._id}`
+                        });
+                        
+                        // 3. Đánh dấu đã nhắc
+                        task.isReminded = true;
+                        await task.save();
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("❌ Lỗi Cron Job:", error);
+        }
+    });
+};
+
+export default startCronJob;
