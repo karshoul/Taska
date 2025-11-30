@@ -1,7 +1,6 @@
 // backend/src/controllers/aiController.js
 
 // 👇 Key của bạn (Giữ nguyên để test)
-const API_KEY = "AIzaSyBzuZR-6mfy09BXmq7aiqehuMEgn3A0A_A"; 
 
 export const generateTasks = async (req, res) => {
   try {
@@ -30,7 +29,7 @@ export const generateTasks = async (req, res) => {
 
     // 2. Gọi trực tiếp API
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${process.env.API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
