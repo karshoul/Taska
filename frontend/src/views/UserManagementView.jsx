@@ -196,6 +196,7 @@ const UserManagementView = ({ users, refreshUsers, currentUserRole }) => {
 
                                             {/* ✅ ĐÃ SỬA: LOGIC NÚT XÓA CHO PHÉP ADMIN XÓA USER */}
                                             {(currentUserRole === "super_admin" || currentUserRole === "admin") && (
+                                                
                                                 <button
                                                     onClick={() => setUserToDelete(user)}
                                                     disabled={

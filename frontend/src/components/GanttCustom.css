@@ -1,0 +1,40 @@
+/* GanttCustom.css */
+
+/* 1. ẨN CỘT FROM VÀ TO */
+.custom-gantt-wrapper div[style*="flex-direction: row"] > div[style*="border-right"]:not(:first-child),
+.custom-gantt-wrapper div[style*="border-bottom"] > div:not(:first-child) {
+    display: none !important;
+}
+
+/* 2. LÀM ĐẸP DANH SÁCH BÊN TRÁI */
+.custom-gantt-wrapper div[role="grid"] div:first-child {
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 800 !important;
+    color: #1e293b !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    padding-left: 20px !important;
+    display: flex !important;
+    align-items: center !important;
+    border-bottom: 1px solid #f8fafc !important;
+}
+
+/* 3. ĐIỂM NHẤN CHO DÒNG TIÊU ĐỀ NHÓM (DỰ ÁN/CÁ NHÂN) */
+/* Nhắm vào các ID mà mình đã đặt G_PRO và G_PER */
+.custom-gantt-wrapper div[role="grid"] div:has(span[title*="DỰ ÁN"]),
+.custom-gantt-wrapper div[role="grid"] div:has(span[title*="CÁ NHÂN"]) {
+    background-color: #f8fafc !important;
+    color: #4338ca !important;
+}
+
+/* 4. BO TRÒN THANH BAR */
+.custom-gantt-wrapper svg rect {
+    rx: 15px !important;
+    ry: 15px !important;
+}
+
+/* 5. FIX LỖI KHOẢNG TRẮNG KHI CHUYỂN TAB */
+.custom-gantt-wrapper > div {
+    height: 100% !important;
+    width: 100% !important;
+}

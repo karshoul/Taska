@@ -9,7 +9,7 @@ const activityLogSchema = new mongoose.Schema({
     action: {
         type: String,
         required: true,
-        enum: ['DELETE_USER', 'DELETE_TASK', 'UPDATE_SETTINGS', 'CHANGE_ROLE'] // Các hành động muốn ghi
+        enum: ['DELETE_USER', 'DELETE_TASK','DELETE_PROJECT', 'UPDATE_SETTINGS', 'CHANGE_ROLE', 'TOGGLE_USER_STATUS'] // Các hành động muốn ghi
     },
     targetName: { 
         type: String, 

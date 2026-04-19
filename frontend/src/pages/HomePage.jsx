@@ -1,30 +1,30 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import api from "@/lib/axios";
-import { visibleTaskLimit } from "@/lib/data";
-import Navbar from "@/components/Navbar";
-import AddTask from "@/components/AddTask";
-import DateTimeFilter from "@/components/DateTimeFilter";
-import TaskList from "@/components/TaskList";
-import TaskListPagination from "@/components/TaskListPagination";
+import api from "../lib/axios"; // Đảm bảo import đúng đường dẫn
+import { visibleTaskLimit } from "../lib/data"; // Hoặc file chứa config
+import Navbar from "../components/Navbar";
+import AddTask from "../components/AddTask"; // Lưu ý đường dẫn component UI
+import DateTimeFilter from "../components/DateTimeFilter";
+import TaskList from "../components/TaskList";
+import TaskListPagination from "../components/TaskListPagination";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
 import { 
-    Loader2, X, Search, CalendarDays, CheckCircle2, Circle, ListFilter, 
-    LayoutGrid, BarChart3, Plus, Sparkles, Download 
+    Loader2, X, Search, CalendarDays, CheckCircle2, Circle, LayoutGrid, 
+    BarChart3, Plus, Sparkles, Download, Folder, Trash2, FolderPlus
 } from "lucide-react";
-import { format, parseISO, isSameDay, isThisWeek, isThisMonth } from "date-fns";
+import { parseISO, isSameDay, isThisWeek, isThisMonth } from "date-fns";
 import axios from "axios";
 import { useLocation, useNavigate } from "react-router-dom";
 
-// ✅ Import Modal AI và Modal Chi tiết
-import TaskDetailModal from "@/components/TaskDetailModal"; 
-import AIGeneratorModal from "@/components/AIGeneratorModal"; 
+import TaskDetailModal from "../components/TaskDetailModal"; 
+import AIGeneratorModal from "../components/AIGeneratorModal"; 
 
 // --- HÀM EXPORT EXCEL ---
 const handleExportExcel = async () => {
     try {
         const token = localStorage.getItem('token');
+        // Lưu ý: Đổi URL localhost nếu cần thiết
         const response = await axios.get('http://localhost:5001/api/tasks/export/excel', {
             headers: { Authorization: `Bearer ${token}` },
             responseType: 'blob', 
@@ -40,7 +40,7 @@ const handleExportExcel = async () => {
     } catch (error) { toast.error("Lỗi xuất file"); }
 };
 
-// --- 1. MODAL XÓA DỰ ÁN ---
+// --- MODAL XÓA DỰ ÁN ---
 const DeleteProjectModal = ({ project, onClose, onConfirm }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     return createPortal(
@@ -55,7 +55,7 @@ const DeleteProjectModal = ({ project, onClose, onConfirm }) => {
                     <div className="space-y-4">
                         <p className="text-sm text-gray-600 leading-relaxed">
                             Bạn có chắc chắn muốn xóa dự án <strong className="text-red-600 bg-red-50 px-1.5 py-0.5 rounded">{project.name}</strong> không?
-                            <br/><span className="text-xs text-gray-400 mt-1 block">Các công việc bên trong sẽ được giữ lại.</span>
+                            <br/><span className="text-xs text-gray-400 mt-1 block">Các công việc bên trong sẽ được giữ lại (chuyển về không có dự án).</span>
                         </p>
                         <div className="flex justify-end gap-3 pt-2">
                             <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-xl transition">Hủy</button>
@@ -70,7 +70,49 @@ const DeleteProjectModal = ({ project, onClose, onConfirm }) => {
     );
 };
 
-// --- 2. LOGIC NGÀY ---
+// --- MODAL TẠO DỰ ÁN NHANH ---
+const CreateProjectModal = ({ isOpen, onClose, onCreate }) => {
+    const [name, setName] = useState("");
+    const [loading, setLoading] = useState(false);
+
+    if (!isOpen) return null;
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        setLoading(true);
+        await onCreate(name);
+        setLoading(false);
+        setName("");
+        onClose();
+    };
+
+    return createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+                <h3 className="text-lg font-bold mb-4">Tạo dự án mới</h3>
+                <form onSubmit={handleSubmit}>
+                    <input 
+                        autoFocus
+                        type="text" 
+                        placeholder="Tên dự án (VD: Marketing, Dev...)" 
+                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none mb-4"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                    />
+                    <div className="flex justify-end gap-2">
+                        <button type="button" onClick={onClose} className="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg">Hủy</button>
+                        <button type="submit" disabled={loading} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">
+                            {loading ? "Đang tạo..." : "Tạo mới"}
+                        </button>
+                    </div>
+                </form>
+            </motion.div>
+        </div>, document.body
+    );
+}
+
+// --- LOGIC NGÀY ---
 const isTaskInDateRange = (taskDateIso, query) => {
     if (!taskDateIso) return false;
     const taskDate = parseISO(taskDateIso);
@@ -81,10 +123,10 @@ const isTaskInDateRange = (taskDateIso, query) => {
     return true; 
 };
 
-// --- 3. BANNER ---
+// --- BANNER ---
 const WelcomeBanner = ({ tasks }) => {
     const todayTasks = tasks.filter(t => isTaskInDateRange(t.deadline, 'today'));
-    const completedToday = todayTasks.filter(t => t.status === 'complete').length;
+    const completedToday = todayTasks.filter(t => t.status === 'Done').length; // Sửa status khớp backend
     const totalToday = todayTasks.length;
     const percent = totalToday === 0 ? 0 : Math.round((completedToday / totalToday) * 100);
 
@@ -128,7 +170,7 @@ const WelcomeBanner = ({ tasks }) => {
     );
 };
 
-// --- 4. MAIN COMPONENT ---
+// --- MAIN COMPONENT ---
 const HomePage = () => {
     const [allTasks, setAllTasks] = useState([]);
     const [filter, setFilter] = useState("all"); 
@@ -139,12 +181,13 @@ const HomePage = () => {
     const [projects, setProjects] = useState([]);
     const [projectFilter, setProjectFilter] = useState("all");
     const [projectToDelete, setProjectToDelete] = useState(null);
+    const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
 
     // State cho Deep Link
     const [deepLinkTask, setDeepLinkTask] = useState(null);
     const [isDeepLinkModalOpen, setIsDeepLinkModalOpen] = useState(false);
     
-    // ✅ STATE CHO AI MODAL
+    // State cho AI Modal
     const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
     const location = useLocation();
@@ -152,25 +195,25 @@ const HomePage = () => {
 
     // --- API Calls ---
     const fetchTasks = useCallback(async () => {
-        try {
-            const res = await api.get(`/tasks?filter=all`); 
-            setAllTasks(res.data.tasks || []);
-        } catch (error) { toast.error("Lỗi tải công việc"); }
-    }, []);
-
-    const refreshProjects = useCallback(async () => {
-        try {
-            const res = await api.get("/projects");
-            setProjects(res.data || []);
-        } catch (error) { toast.error("Lỗi tải dự án"); }
-    }, []);
+    try {
+        const res = await api.get(`/tasks?filter=all`); 
+        // ⚠️ SỬA DÒNG NÀY: Backend trả về mảng trực tiếp thì lấy res.data thôi
+        // Nếu backend trả { tasks: [...] } thì để res.data.tasks
+        // Code an toàn nhất:
+        const data = res.data.tasks || res.data; 
+        setAllTasks(Array.isArray(data) ? data : []); 
+    } catch (error) { 
+        console.error("Lỗi fetch tasks:", error);
+        toast.error("Lỗi tải công việc"); 
+    }
+}, []);
 
     // --- Deep Link Check ---
     useEffect(() => {
-        const checkDeepLink = async () => {
-            const params = new URLSearchParams(location.search);
-            const taskId = params.get("taskId");
-            if (taskId) {
+        const params = new URLSearchParams(location.search);
+        const taskId = params.get("taskId");
+        if (taskId) {
+            const checkDeepLink = async () => {
                 try {
                     const res = await api.get(`/tasks/${taskId}`);
                     const taskData = res.data.task || res.data; 
@@ -179,9 +222,9 @@ const HomePage = () => {
                         setIsDeepLinkModalOpen(true);
                     }
                 } catch (error) { console.error(error); toast.error("Công việc không tồn tại."); }
-            }
-        };
-        checkDeepLink();
+            };
+            checkDeepLink();
+        }
     }, [location.search]);
 
     // --- Handlers ---
@@ -203,15 +246,9 @@ const HomePage = () => {
         } catch (error) { toast.error("Lỗi xóa dự án"); } finally { setProjectToDelete(null); }
     };
 
-    const triggerDeleteProject = (projectId, projectName) => {
-        setProjectToDelete({ id: projectId, name: projectName });
-    };
-
-    // ✅ LOGIC XỬ LÝ THÊM TASK TỪ AI (Tại trang chủ)
+    // AI Add Tasks
     const handleAddTasksFromAI = async (taskTitles) => {
         try {
-            // 1. Tạo Deadline là cuối ngày HÔM NAY (23:59)
-            // Để đảm bảo nó hiện ra ngay trong bộ lọc "Hôm nay"
             const today = new Date();
             today.setHours(23, 59, 0, 0);
             const deadlineISO = today.toISOString();
@@ -220,27 +257,17 @@ const HomePage = () => {
                 api.post("/tasks", { 
                     title: taskTitle,
                     description: "Được tạo tự động bởi AI ✨",
-                    status: "active", 
+                    status: "To Do", 
                     recurrence: { frequency: "none" },
-                    
-                    // Logic cũ: Gán Project nếu đang lọc
                     project: projectFilter !== 'all' && projectFilter !== 'none' ? projectFilter : null,
-                    
-                    // ✅ THÊM DÒNG NÀY: Gán hạn chót là hôm nay
                     deadline: deadlineISO,
-                    
-                    // ✅ THÊM DÒNG NÀY: Mặc định độ ưu tiên trung bình
                     priority: 'medium'
                 })
             );
 
             await Promise.all(createPromises);
-            
             toast.success(`✨ Đã thêm ${taskTitles.length} công việc từ AI!`);
-            
-            // 2. Refresh lại dữ liệu ngay lập tức
             await fetchTasks(); 
-            
         } catch (error) {
             console.error(error);
             toast.error("Lỗi khi lưu công việc từ AI.");
@@ -250,30 +277,18 @@ const HomePage = () => {
     useEffect(() => { fetchTasks(); refreshProjects(); }, [fetchTasks, refreshProjects]);
     useEffect(() => { setPage(1); }, [filter, dateQuery, projectFilter, search]);
 
-    // --- Filtering ---
+    // --- Filtering Logic ---
     const filteredTasks = useMemo(() => {
         return allTasks
             .filter(task => {
-                // 1. LỌC NGÀY
                 if (dateQuery === 'all') return true;
-
-                // Case 1: Có Deadline -> So sánh Deadline
-                if (task.deadline) {
-                    return isTaskInDateRange(task.deadline, dateQuery);
-                }
-                
-                // Case 2: KHÔNG có Deadline -> So sánh Ngày tạo (createdAt)
-                // Để đảm bảo task mới tạo (chưa có hạn chót) vẫn hiện ra trong tab Hôm nay
-                if (task.createdAt) {
-                    return isTaskInDateRange(task.createdAt, dateQuery);
-                }
-
-                return false; // Không có cả 2 thì ẩn
+                if (task.deadline) return isTaskInDateRange(task.deadline, dateQuery);
+                if (task.createdAt) return isTaskInDateRange(task.createdAt, dateQuery);
+                return false;
             })
             .filter(task => {
-                // ... (các bộ lọc khác giữ nguyên)
-                if (filter === "active") return task.status === "active";
-                if (filter === "completed") return task.status === "complete";
+                if (filter === "active") return task.status !== "Done";
+                if (filter === "completed") return task.status === "Done";
                 return true;
             })
             .filter(task => {
@@ -316,23 +331,67 @@ const HomePage = () => {
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                     
-                    {/* 👈 CỘT TRÁI: FORM THÊM */}
-                    <div className="lg:col-span-5 xl:col-span-3 order-2 lg:order-1">
+                    {/* 👈 CỘT TRÁI: FORM THÊM & DANH SÁCH DỰ ÁN */}
+                    <div className="lg:col-span-5 xl:col-span-3 order-2 lg:order-1 space-y-6">
                         <div className="sticky top-[88px] space-y-6">
-                           
-                                    <AddTask 
-                                        handleNewTaskAdded={fetchTasks}
-                                        projects={projects}
-                                        onCreateProject={handleCreateProject}
-                                        onDeleteProject={triggerDeleteProject}
-                                    />
+                            
+                            {/* Form thêm task */}
+                            <AddTask 
+                                handleNewTaskAdded={fetchTasks}
+                                projects={projects}
+                            />
+
+                            {/* 🔥 DANH SÁCH DỰ ÁN (PROJECT LIST) */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                                    <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                                        <Folder className="w-5 h-5 text-indigo-500" /> Dự án của tôi
+                                    </h3>
+                                    <button 
+                                        onClick={() => setIsCreateProjectOpen(true)}
+                                        className="p-1.5 hover:bg-white hover:shadow-sm rounded-lg transition-all text-gray-500 hover:text-indigo-600" title="Tạo dự án mới"
+                                    >
+                                        <FolderPlus className="w-5 h-5" />
+                                    </button>
+                                </div>
+                                
+                                <div className="p-3 space-y-1 max-h-[300px] overflow-y-auto custom-scrollbar">
+                                    <button 
+                                        onClick={() => setProjectFilter('all')}
+                                        className={`w-full text-left px-3 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-3 ${projectFilter === 'all' ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50'}`}
+                                    >
+                                        <LayoutGrid className="w-4 h-4" /> Tất cả công việc
+                                    </button>
+                                    
+                                    {projects.length > 0 ? projects.map(project => (
+                                        <div key={project._id} className={`group flex items-center justify-between px-3 py-2 rounded-xl transition-all ${projectFilter === project._id ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-50'}`}>
+                                            <button 
+                                                onClick={() => setProjectFilter(project._id)}
+                                                className="flex-1 text-left text-sm font-medium truncate flex items-center gap-3"
+                                            >
+                                                <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
+                                                {project.name}
+                                            </button>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); setProjectToDelete({ id: project._id, name: project.name }); }}
+                                                className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    )) : (
+                                        <p className="text-center text-xs text-gray-400 py-4 italic">Chưa có dự án nào</p>
+                                    )}
+                                </div>
+                            </div>
+
                         </div>
                     </div>
 
-                    {/* 👉 CỘT PHẢI: DANH SÁCH */}
+                    {/* 👉 CỘT PHẢI: TOOLBAR & DANH SÁCH TASK */}
                     <div className="lg:col-span-7 xl:col-span-9 order-1 lg:order-2 space-y-6">
                         
-                        {/* STICKY TOOLBAR */}
+                        {/* TOOLBAR */}
                         <div className="sticky top-[72px] z-30 -mx-4 px-4 md:mx-0 md:px-0 pt-4 pb-2 bg-[#F8F9FC]/95 backdrop-blur-md transition-all">
                             <div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-200 flex flex-col lg:flex-row justify-between gap-3 items-center">
                                 
@@ -341,7 +400,7 @@ const HomePage = () => {
                                     <Search className="absolute left-3.5 top-3 w-5 h-5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" />
                                     <input 
                                         type="text" 
-                                        placeholder="Tìm kiếm..." 
+                                        placeholder="Tìm kiếm công việc..." 
                                         className="w-full pl-11 pr-4 py-2.5 bg-gray-50 rounded-xl border-transparent focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all outline-none text-gray-700 font-medium placeholder-gray-400"
                                         value={search}
                                         onChange={e => setSearch(e.target.value)}
@@ -349,10 +408,8 @@ const HomePage = () => {
                                     {search && <button onClick={() => setSearch("")} className="absolute right-3 top-2.5 p-0.5 hover:bg-gray-200 rounded-full text-gray-400"><X className="w-4 h-4"/></button>}
                                 </div>
 
-                                {/* Filters */}
+                                {/* Filters & Actions */}
                                 <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-end">
-                                    
-                                    {/* ✅ NÚT GỌI AI (THÊM VÀO ĐÂY) */}
                                     <button 
                                         onClick={() => setIsAIModalOpen(true)}
                                         className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg hover:shadow-pink-200 transition-all transform hover:scale-105"
@@ -365,9 +422,10 @@ const HomePage = () => {
                                     <div className="flex-1 lg:flex-none overflow-x-auto flex items-center gap-2">
                                          <DateTimeFilter 
                                             dateQuery={dateQuery} setDateQuery={setDateQuery} 
+                                            // Ẩn dropdown project cũ vì đã có sidebar
                                             projectFilter={projectFilter} setProjectFilter={setProjectFilter}
                                             projectOptions={projectFilterOptions}
-                                            onDeleteProject={triggerDeleteProject}
+                                            hideProjectSelect={true} 
                                         />
                                         <button onClick={handleExportExcel} className="p-2 rounded-lg text-gray-500 hover:bg-green-50 hover:text-green-600 transition-colors" title="Xuất Excel">
                                             <Download className="w-5 h-5" />
@@ -428,6 +486,7 @@ const HomePage = () => {
                 </div>
             </motion.div> 
 
+            {/* CÁC MODAL */}
             {projectToDelete && <DeleteProjectModal project={projectToDelete} onClose={() => setProjectToDelete(null)} onConfirm={handleDeleteProject} />}
             
             <TaskDetailModal 
@@ -437,11 +496,16 @@ const HomePage = () => {
                 handleTaskChanged={fetchTasks} 
             />
 
-            {/* ✅ HIỂN THỊ MODAL AI Ở ĐÂY */}
             <AIGeneratorModal 
                 isOpen={isAIModalOpen}
                 onClose={() => setIsAIModalOpen(false)}
                 onAddTasks={handleAddTasksFromAI}
+            />
+
+            <CreateProjectModal 
+                isOpen={isCreateProjectOpen} 
+                onClose={() => setIsCreateProjectOpen(false)} 
+                onCreate={handleCreateProject} 
             />
         </div>
     );

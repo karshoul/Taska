@@ -8,6 +8,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const TaskListPagination = ({
   handleNext,
@@ -18,95 +19,93 @@ const TaskListPagination = ({
 }) => {
   const generatePages = () => {
     const pages = [];
-
-    // Nếu tổng số trang nhỏ hoặc bằng 7, hiển thị tất cả
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i);
-      }
+    if (totalPages <= 5) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
       return pages;
     }
-    
-    // Luôn thêm trang đầu và trang cuối
     pages.push(1);
-
-    // Xử lý các trang gần đầu (Page 1, 2, 3)
-    if (page <= 3) {
-      pages.push(2, 3, 4);
-      pages.push("...");
-    }
-    // Xử lý các trang gần cuối (Ví dụ: Page totalPages-2, totalPages-1, totalPages)
-    else if (page >= totalPages - 2) {
-      pages.push("...");
-      pages.push(totalPages - 3, totalPages - 2, totalPages - 1);
-    }
-    // Xử lý các trang ở giữa
-    else {
-      pages.push("...");
-      pages.push(page - 1, page, page + 1);
-      pages.push("...");
-    }
-
-    // Luôn thêm trang cuối cùng (tránh bị trùng nếu đã thêm ở logic trên)
-    if (pages[pages.length - 1] !== totalPages) {
-        pages.push(totalPages);
-    }
+    if (page > 3) pages.push("...");
     
-    // Loại bỏ dấu ... liền kề nếu có
-    const finalPages = pages.filter((p, index) => {
-        return p !== "..." || pages[index - 1] !== "...";
-    });
+    let start = Math.max(2, page - 1);
+    let end = Math.min(totalPages - 1, page + 1);
 
-    return finalPages;
+    if (page <= 3) end = 4;
+    if (page >= totalPages - 2) start = totalPages - 3;
+
+    for (let i = start; i <= end; i++) {
+        if (!pages.includes(i)) pages.push(i);
+    }
+
+    if (page < totalPages - 2) pages.push("...");
+    if (!pages.includes(totalPages)) pages.push(totalPages);
+
+    return pages;
   };
 
   const pagesToShow = generatePages();
 
   return (
-    <div className="flex justify-center mt-4">
-      <Pagination>
-        <PaginationContent>
-          {/* Trước */}
+    /* THAY ĐỔI: Dồn trái (justify-start) và giảm margin top */
+    <div className="flex justify-start items-center mt-6 ml-1">
+      <Pagination className="mx-0 w-auto">
+        <PaginationContent className="gap-1"> {/* Giảm khoảng cách giữa các nút */}
+          
+          {/* Nút Trước - Thu gọn icon */}
           <PaginationItem>
-            <PaginationPrevious
+            <button
               onClick={page === 1 ? undefined : handlePrev}
+              disabled={page === 1}
               className={cn(
-                "cursor-pointer",
-                page === 1 && "pointer-events-none opacity-50"
+                "flex items-center justify-center w-8 h-8 rounded-lg transition-all border border-transparent hover:bg-gray-100 disabled:opacity-30",
+                "text-gray-500"
               )}
-            />
+            >
+              <ChevronLeft size={16} />
+            </button>
           </PaginationItem>
 
+          {/* Các con số - Bo tròn nhỏ và Font hiện đại */}
           {pagesToShow.map((p, index) => (
             <PaginationItem key={index}>
               {p === "..." ? (
-                <PaginationEllipsis />
+                <div className="w-8 text-center text-gray-300 text-xs font-black">•••</div>
               ) : (
-                <PaginationLink
-                  isActive={p === page}
-                  onClick={() => {
-                    if (p !== page) handlePageChange(p);
-                  }}
-                  className="cursor-pointer"
+                <button
+                  onClick={() => p !== page && handlePageChange(p)}
+                  className={cn(
+                    "w-8 h-8 text-xs font-black rounded-lg transition-all border",
+                    p === page 
+                      ? "bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-200" 
+                      : "bg-white border-gray-100 text-gray-400 hover:border-indigo-100 hover:text-indigo-600"
+                  )}
                 >
                   {p}
-                </PaginationLink>
+                </button>
               )}
             </PaginationItem>
           ))}
 
-          {/* Sau */}
+          {/* Nút Sau */}
           <PaginationItem>
-            <PaginationNext
+            <button
               onClick={page === totalPages ? undefined : handleNext}
+              disabled={page === totalPages}
               className={cn(
-                "cursor-pointer",
-                page === totalPages && "pointer-events-none opacity-50"
+                "flex items-center justify-center w-8 h-8 rounded-lg transition-all border border-transparent hover:bg-gray-100 disabled:opacity-30",
+                "text-gray-500"
               )}
-            />
+            >
+              <ChevronRight size={16} />
+            </button>
           </PaginationItem>
+
         </PaginationContent>
       </Pagination>
+
+      {/* Thông tin trang nhỏ ở cạnh (tùy chọn) */}
+      <span className="ml-4 text-[10px] font-black text-gray-300 uppercase tracking-widest">
+        Page {page} of {totalPages}
+      </span>
     </div>
   );
 };

@@ -1,177 +1,244 @@
-import React, { useState, useCallback } from "react";
-import { createPortal } from "react-dom";
+import React, { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 import api from "@/lib/axios";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, LayoutGroup } from "framer-motion";
 import TaskDetailModal from "./TaskDetailModal";
-import { Folder, CalendarClock, Clock, Trash2, Flame, Zap, Coffee } from "lucide-react"; 
+import { 
+    Folder, Trash2, Flame, Zap, Coffee, 
+    CheckCircle2, User, Paperclip, Image as ImageIcon,
+    Pin, ChevronRight, MoreHorizontal, Clock, AlertCircle,
+    SquarePen // <-- Thêm icon cây bút ở đây
+} from "lucide-react";
 
-// --- COMPONENT CON: Popup Xác nhận Xóa ---
-const DeleteConfirmationPopup = ({ onConfirm, onCancel }) => {
-    return createPortal(
-        <AnimatePresence>
-            <motion.div
-                key="backdrop-delete"
-                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} onClick={onCancel}
-            />
-            <motion.div
-                key="modal-delete"
-                className="fixed inset-0 z-50 flex items-center justify-center p-4"
-                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.25 }}
-            >
-                <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-sm text-center" onClick={(e) => e.stopPropagation()}>
-                    <h3 className="text-lg font-semibold text-gray-800 mb-2">Xác nhận xoá</h3>
-                    <p className="text-gray-600 mb-4">Bạn có chắc chắn muốn xoá công việc này không?</p>
-                    <div className="flex justify-center gap-3">
-                        <button onClick={onConfirm} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full shadow-sm transition bg-red-100 text-red-700 hover:bg-red-200">🗑️ Có, xoá</button>
-                        <button onClick={onCancel} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full shadow-sm transition bg-gray-100 text-gray-700 hover:bg-gray-200">✖️ Không</button>
-                    </div>
-                </div>
-            </motion.div>
-        </AnimatePresence>, document.body
-    );
-};
+// --- COMPONENT THẺ TASK (Thiết kế lại cho dạng Grid) ---
+const TaskRow = ({ task, onToggle, onDelete, onPin, onOpenDetail }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const isDone = task.status === "Done" || task.status === "complete";
+    const isOverdue = task.deadline && new Date(task.deadline) < new Date() && !isDone;
 
-// === COMPONENT CHÍNH: TaskList ===
-const TaskList = ({ filteredTasks, handleTaskChanged }) => {
-    const [selectedTask, setSelectedTask] = useState(null);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+    // Hàm kiểm tra xem file có phải là ảnh không
+    const isImage = (url) => /\.(jpg|jpeg|png|webp|avif|gif)$/i.test(url);
 
-    const toggleStatus = useCallback(async (taskId, currentStatus) => {
-        try {
-            await api.put(`/tasks/${taskId}`, { status: currentStatus === "active" ? "complete" : "active" });
-            handleTaskChanged();
-            toast.success("✅ Cập nhật trạng thái thành công!");
-        } catch (error) { toast.error("Không thể thay đổi trạng thái"); }
-    }, [handleTaskChanged]);
-
-    const confirmDelete = useCallback(async () => {
-        if (!confirmDeleteId) return;
-        try {
-            await api.delete(`/tasks/${confirmDeleteId}`);
-            toast.success("🗑️ Xoá thành công!");
-            handleTaskChanged();
-        } catch (error) { toast.error("Không thể xoá công việc"); } finally { setConfirmDeleteId(null); }
-    }, [confirmDeleteId, handleTaskChanged]);
-
-    const openModal = useCallback((task) => { setSelectedTask(task); setIsModalOpen(true); }, []);
-    const closeModal = useCallback(() => { setSelectedTask(null); setIsModalOpen(false); }, []);
-
-    const taskVariants = {
-        initial: { opacity: 0, y: 20, scale: 0.98 },
-        animate: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.4, ease: [0.25, 1, 0.5, 1] } },
-        exit: { opacity: 0, scale: 0.95, transition: { duration: 0.2 } },
-    };
-
-    // ✅ Helper lấy màu và icon cho Priority
-    const getPriorityConfig = (level) => {
-        switch(level) {
-            case 'high': return { icon: Flame, color: 'text-red-500 bg-red-50 border-red-100', label: 'Cao' };
-            case 'low': return { icon: Coffee, color: 'text-blue-500 bg-blue-50 border-blue-100', label: 'Thấp' };
-            default: return { icon: Zap, color: 'text-yellow-500 bg-yellow-50 border-yellow-100', label: 'TB' }; // medium
+    const priorityConfig = useMemo(() => {
+        switch(task.priority) {
+            case 'high': return { color: '#FF4D4D' };
+            case 'low': return { color: '#4DABFF' };
+            default: return { color: '#FFC107' };
         }
-    };
-
-    if (!filteredTasks.length) {
-        return (
-            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-gray-500 italic text-center py-10">
-                Không có công việc nào phù hợp.
-            </motion.p>
-        );
-    }
+    }, [task.priority]);
 
     return (
-        <>
-            <div className="space-y-4">
-                <AnimatePresence>
-                    {filteredTasks.map((task) => {
-                        const isOverdue = task.deadline && new Date(task.deadline) < new Date() && task.status !== "complete";
-                        const createdDate = task.createdAt ? new Date(task.createdAt).toLocaleString("vi-VN", { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : "N/A";
-                        
-                        // Config màu nền
-                        let cardColor = "bg-white/80 border-gray-200";
-                        if (task.status === "complete") cardColor = "bg-green-50/80 border-green-200";
-                        else if (isOverdue) cardColor = "bg-red-50/80 border-red-200";
-                        else if (task.status === "active") cardColor = "bg-yellow-50/80 border-yellow-200";
+        <motion.div
+            layout
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className={`group relative overflow-hidden rounded-[20px] bg-white border border-gray-100 transition-all duration-300 hover:shadow-xl hover:-translate-y-1 ${isDone ? 'opacity-50' : ''}`}
+        >
+            <div className="absolute left-0 right-0 top-0 h-1" style={{ backgroundColor: priorityConfig.color }} />
 
-                        // Lấy Priority Info
-                        const priorityConfig = getPriorityConfig(task.priority);
-                        const PriorityIcon = priorityConfig.icon;
+            <div className="p-4 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
+                <div className="flex items-start justify-between mb-3">
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onToggle(task._id, task.status); }}
+                        className={`shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                            isDone ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-200 hover:border-indigo-400 text-transparent'
+                        }`}
+                    >
+                        <CheckCircle2 size={12} strokeWidth={4} />
+                    </button>
+                    
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }} 
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50"
+                            title="Chỉnh sửa"
+                        >
+                            <SquarePen size={14} />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); onPin(task); }} className={`p-1.5 rounded-lg ${task.isPinned ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:bg-gray-100'}`}><Pin size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(task._id); }} className="p-1.5 text-red-200 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={14} /></button>
+                    </div>
+                </div>
 
-                        return (
-                            <motion.div
-                                key={task._id}
-                                layout
-                                variants={taskVariants}
-                                initial="initial"
-                                animate="animate"
-                                exit="exit"
-                                className={`p-4 rounded-lg shadow backdrop-blur-sm border transition-shadow hover:shadow-md cursor-pointer ${cardColor}`}
-                                onClick={() => openModal(task)}
-                                // ✅ Thêm viền trái màu theo priority để dễ nhận diện
-                                style={{ borderLeftWidth: '4px', borderLeftColor: task.priority === 'high' ? '#ef4444' : task.priority === 'low' ? '#3b82f6' : '#eab308' }}
-                            >
-                                <div className="flex justify-between items-start">
-                                    <div className="flex-1 min-w-0 pr-4 space-y-1.5">
-                                        <div className="flex items-center gap-2">
-                                            {/* ✅ ICON PRIORITY */}
-                                            <div className={`p-1 rounded-md border ${priorityConfig.color}`} title={`Mức độ ưu tiên: ${priorityConfig.label}`}>
-                                                <PriorityIcon className="w-3.5 h-3.5" />
-                                            </div>
+                <div className="min-w-0 mb-3">
+                    <h3 className={`text-sm font-black leading-snug mb-1 ${isDone ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                        {task.title}
+                    </h3>
+                    
+                    <div className="flex flex-wrap items-center gap-2">
+                        {task.project && (
+                            <span className="text-[9px] font-black text-gray-400 uppercase bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">
+                                {task.project.name}
+                            </span>
+                        )}
+                        {task.deadline && (
+                            <span className={`text-[9px] font-black uppercase ${isOverdue ? 'text-red-500' : 'text-gray-300'}`}>
+                                <Clock size={10} className="inline mr-1"/>
+                                {new Date(task.deadline).toLocaleDateString('vi-VN')}
+                            </span>
+                        )}
+                    </div>
 
-                                            <h3 className={`text-lg font-semibold truncate ${task.status === "complete" ? "line-through text-gray-400" : isOverdue ? "text-red-600" : "text-gray-800"}`} title={task.title}>
-                                                {task.title}
-                                            </h3>
+                    {/* --- PHẦN PREVIEW FILE RA NGOÀI --- */}
+                    {task.attachments && task.attachments.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                            {task.attachments.slice(0, 3).map((file, idx) => (
+                                <div key={idx} className="relative group/preview shrink-0">
+                                    {isImage(file.url) ? (
+                                        <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-100 shadow-sm">
+                                            <img src={file.url} className="w-full h-full object-cover" alt="preview" />
                                         </div>
-
-                                        {task.project && (
-                                            <div className="flex items-center gap-1.5" title={task.project.name}>
-                                                <Folder className="w-3.5 h-3.5 flex-shrink-0" style={{ color: task.project.color || '#808080' }} />
-                                                <span className="text-xs font-semibold text-gray-600 truncate">{task.project.name}</span>
-                                            </div>
-                                        )}
-
-                                        {task.description && (
-                                            <p className="text-sm text-gray-500 truncate italic" title={task.description}>{task.description}</p>
-                                        )}
-                                    </div>
-                                    
-                                    <div className="flex flex-col items-end gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${task.status === "complete" ? "bg-green-100 text-green-800" : isOverdue ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}`}>
-                                            {task.status === "complete" ? "Hoàn thành" : isOverdue ? "Tồn đọng" : "Đang làm"}
-                                        </span>
-                                        <div className="flex gap-2">
-                                            <button onClick={() => toggleStatus(task._id, task.status)} className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-full shadow-sm transition ${task.status === "active" ? "bg-green-50 text-green-600 hover:bg-green-100" : "bg-yellow-50 text-yellow-600 hover:bg-yellow-100"}`}>
-                                                {task.status === "active" ? "✅ Hoàn thành" : "🔄 Kích hoạt lại"}
-                                            </button>
-                                            <button onClick={() => setConfirmDeleteId(task._id)} className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-full shadow-sm transition bg-red-50 text-red-600 hover:bg-red-100">🗑️ Xoá</button>
+                                    ) : (
+                                        <div className="w-10 h-10 rounded-lg bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center text-indigo-400">
+                                            <Paperclip size={12} />
                                         </div>
-                                    </div>
-                                </div>
-
-                                <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
-                                    <div className="flex items-center gap-1" title="Ngày tạo">
-                                        <CalendarClock className="w-3.5 h-3.5" />
-                                        <span>Tạo: {createdDate}</span>
-                                    </div>
-                                    {task.deadline && (
-                                        <div className={`flex items-center gap-1 ${isOverdue ? "text-red-600 font-medium" : ""}`}>
-                                            <span>⏰ Hạn chót: {new Date(task.deadline).toLocaleString("vi-VN")}</span>
-                                            {isOverdue && " (Quá hạn)"}
+                                    )}
+                                    {/* Nếu nhiều hơn 3 file thì hiện số đếm */}
+                                    {idx === 2 && task.attachments.length > 3 && (
+                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-lg">
+                                            <span className="text-[8px] text-white font-black">+{task.attachments.length - 3}</span>
                                         </div>
                                     )}
                                 </div>
-                            </motion.div>
-                        );
-                    })}
-                </AnimatePresence>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-gray-50">
+                    <div className="flex items-center gap-2">
+                        {task.assignee ? (
+                            <div className="w-6 h-6 rounded-full bg-indigo-50 border border-white shadow-sm flex items-center justify-center text-[9px] font-black text-indigo-600 overflow-hidden">
+                                {task.assignee.avatar ? <img src={task.assignee.avatar} className="w-full h-full object-cover" /> : (task.assignee.name?.charAt(0) || "U")}
+                            </div>
+                        ) : <div className="w-6 h-6 rounded-full border border-dashed border-gray-100" />}
+                    </div>
+                    <ChevronRight size={14} className={`text-gray-300 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                </div>
             </div>
 
-            <TaskDetailModal task={selectedTask} open={isModalOpen} onClose={closeModal} handleTaskChanged={handleTaskChanged} />
-            {confirmDeleteId && <DeleteConfirmationPopup onConfirm={confirmDelete} onCancel={() => setConfirmDeleteId(null)} />}
-        </>
+            <AnimatePresence>
+                {isExpanded && (
+                    <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden bg-gray-50/50">
+                        <div className="p-4 border-t border-gray-100">
+                            <div className="text-[11px] text-gray-500 leading-relaxed mb-3">
+                                {task.description || "Chưa có mô tả."}
+                            </div>
+                            
+                            {/* Danh sách file chi tiết để bấm vào xem */}
+                            {task.attachments && task.attachments.length > 0 && (
+                                <div className="flex flex-col gap-1">
+                                    {task.attachments.map((file, idx) => (
+                                        <button 
+                                            key={idx}
+                                            onClick={(e) => { e.stopPropagation(); window.open(file.url, '_blank'); }}
+                                            className="flex items-center gap-2 p-1.5 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-gray-100 group/file"
+                                        >
+                                            {isImage(file.url) ? <ImageIcon size={12} className="text-indigo-400"/> : <Paperclip size={12} className="text-gray-400"/>}
+                                            <span className="text-[10px] font-bold text-gray-600 truncate flex-1 text-left">{file.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.div>
+    );
+};
+
+// --- COMPONENT CHÍNH ---
+const TaskList = ({ filteredTasks, handleTaskChanged, page }) => {
+    const [selectedTask, setSelectedTask] = useState(null);
+    const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+    useEffect(() => {
+    const handleRefresh = () => {
+        console.log("==> TaskList: Đã nhận tín hiệu refresh từ Taskie!");
+        
+        // Kiểm tra xem hàm handleTaskChanged có tồn tại không trước khi gọi để tránh crash
+        if (typeof handleTaskChanged === 'function') {
+            handleTaskChanged(); 
+        } else {
+            console.warn("TaskList: handleTaskChanged không phải là một hàm!");
+        }
+    };
+
+    // Lắng nghe sự kiện toàn cục
+    window.addEventListener("refresh_task_list", handleRefresh);
+    
+    // Cleanup: Xóa lắng nghe khi component bị hủy (Tránh memory leak)
+    return () => {
+        window.removeEventListener("refresh_task_list", handleRefresh);
+    };
+    
+    // 🚩 QUAN TRỌNG: Để mảng rỗng [] nếu sếp muốn nó luôn luôn lắng nghe 
+    // mà không bị đăng ký lại mỗi khi hàm handleTaskChanged thay đổi địa chỉ vùng nhớ.
+}, []);
+
+    const sortedTasks = useMemo(() => {
+        return [...filteredTasks].sort((a, b) => (a.isPinned === b.isPinned ? 0 : a.isPinned ? -1 : 1));
+    }, [filteredTasks]);
+
+    return (
+        <div className="w-full pb-20">
+            <h2 className="text-lg font-black text-gray-800 mb-6 tracking-tight uppercase">
+                Danh sách công việc <span className="ml-2 text-indigo-500 text-sm font-medium">({filteredTasks.length})</span>
+            </h2>
+            
+            <LayoutGroup>
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={page}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4"
+                    >
+                       {sortedTasks.map((task, index) => ( // ✅ Cú pháp chuẩn: (item, index) => (...)
+    <TaskRow 
+        key={task._id || index} 
+        task={task} 
+        onToggle={(id, st) => {
+            // Ép về đúng enum Backend: "To Do" hoặc "Done"
+            const nextStatus = (st === "Done" || st === "complete") ? "To Do" : "Done";
+            api.put(`/tasks/${id}`, { status: nextStatus }).then(handleTaskChanged);
+        }} 
+        onPin={t => api.put(`/tasks/${t._id}`, { isPinned: !t.isPinned }).then(handleTaskChanged)} 
+        onDelete={setConfirmDeleteId} 
+        onOpenDetail={setSelectedTask} 
+    />
+))}
+                    </motion.div>
+                </AnimatePresence>
+            </LayoutGroup>
+
+            {selectedTask && <TaskDetailModal task={selectedTask} open={!!selectedTask} onClose={() => setSelectedTask(null)} handleTaskChanged={handleTaskChanged} />}
+
+            {/* Popup xóa vĩnh viễn */}
+            <AnimatePresence>
+                {confirmDeleteId && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-900/10 backdrop-blur-md">
+                        <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white p-8 rounded-[40px] shadow-2xl max-w-sm text-center">
+                            <h3 className="font-black text-gray-800 text-lg">Xoá task này?</h3>
+                            <div className="flex gap-3 mt-6">
+                                <button onClick={() => setConfirmDeleteId(null)} className="flex-1 py-3 text-xs font-bold text-gray-400 uppercase">Hủy</button>
+                                <button onClick={async () => {
+                                    try {
+                                        await api.delete(`/tasks/${confirmDeleteId}`);
+                                        handleTaskChanged();
+                                        setConfirmDeleteId(null);
+                                        toast.success("Đã xóa!");
+                                    } catch(e) { toast.error("Lỗi xóa task"); }
+                                }} className="flex-1 py-3 bg-red-500 text-white rounded-2xl text-xs font-black shadow-lg shadow-red-200 uppercase">Xóa</button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+        </div>
     );
 };
 

@@ -29,20 +29,24 @@ const generateToken = (id, email, name, role) => {
 
 export const register = async (req, res) => {
     try {
-
-        // 1. ✅ KIỂM TRA CẤU HÌNH HỆ THỐNG
-        const settings = await Settings.findOne();
-        // Nếu có settings và allowRegistrations = false -> Chặn luôn
+        // 1. ✅ KIỂM TRA CẤU HÌNH HỆ THỐNG (Singleton)
+        const settings = await Settings.findOne({ singleton: 'main_settings' });
+        
+        // Nếu sếp đã tắt "Cho phép đăng ký" trong Admin
         if (settings && settings.allowRegistrations === false) {
-            return res.status(403).json({ message: "Hệ thống đang tạm ngưng đăng ký tài khoản mới." });
+            return res.status(403).json({ 
+                message: "Hệ thống đang tạm ngưng đăng ký tài khoản mới. Sếp vui lòng quay lại sau!" 
+            });
         }
 
         const { name, email, password } = req.body;
         
+        // Validation cơ bản
         if (!name || !email || !password) {
             return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin" });
         }
 
+        // Kiểm tra email tồn tại
         const userExists = await User.findOne({ email });
         if (userExists) {
             if (userExists.googleId) {
@@ -51,33 +55,38 @@ export const register = async (req, res) => {
             return res.status(400).json({ message: "Email đã được sử dụng" });
         }
 
-        // ✅ ĐÃ SỬA: Bỏ qua việc hash thủ công.
-        // Gửi thẳng mật khẩu gốc vào User.create().
-        // Middleware pre('save') trong userModel.js sẽ tự động xử lý việc mã hóa.
+        // 2. ✅ TẠO USER
+        // Model User sẽ tự hash mật khẩu nhờ middleware pre('save')
         const user = await User.create({
             name,
             email,
-            password: password, // Gửi mật khẩu gốc
+            password, // Gửi pass gốc, model tự xử
             role: 'user',
-            // Ghi chú: Đảm bảo model của bạn có trường `authProvider`
-            // authProvider: 'local', 
+            isActive: true // Mặc định tài khoản mới là hoạt động
         });
 
-        // Tạo token và trả về
-        const token = user.getSignedJwtToken(); // Dùng phương thức từ model
+        // 3. ✅ TRẢ VỀ TOKEN
+        const token = user.getSignedJwtToken(); 
         
         res.status(201).json({ 
+            success: true,
             token,
-            role: user.role 
+            role: user.role,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email
+            }
         });
+
     } catch (error) {
-        console.error("Lỗi khi đăng ký:", error);
-        // Xử lý lỗi validation của Mongoose
+        console.error("❌ Lỗi khi đăng ký:", error);
+        
         if (error.name === 'ValidationError') {
             const messages = Object.values(error.errors).map(val => val.message);
             return res.status(400).json({ message: messages.join('. ') });
         }
-        res.status(500).json({ message: "Lỗi hệ thống" });
+        res.status(500).json({ message: "Lỗi hệ thống khi tạo tài khoản" });
     }
 };
 
@@ -86,46 +95,52 @@ export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // 1. Tìm người dùng bằng email và lấy cả mật khẩu
+        // 1. Tìm người dùng
         const user = await User.findOne({ email }).select('+password');
 
-        console.log("Role thực tế trong DB là:", `'${user.role}'`);
-        
+        // 🔥 QUAN TRỌNG: Phải kiểm tra user tồn tại TRƯỚC KHI truy cập user.role
         if (!user) {
             return res.status(401).json({ message: "Email hoặc mật khẩu không đúng" });
         }
 
-        // 2. ✅ KIỂM TRA TRẠNG THÁI TÀI KHOẢN (BƯỚC QUAN TRỌNG MỚI)
-        // Kiểm tra này phải được thực hiện trước khi kiểm tra mật khẩu.
+        // --- Chỉ được log sau khi đã chắc chắn user khác null ---
+        console.log("Role thực tế trong DB là:", `'${user.role}'`);
+
+        // 2. Kiểm tra trạng thái Active
         if (user.isActive === false) {
             return res.status(403).json({ 
                 message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên." 
             });
         }
         
-        // 3. Kiểm tra phương thức đăng nhập
+        // 3. Kiểm tra Google Account
         if (user.googleId && !user.password) {
             return res.status(403).json({ 
                 message: "Tài khoản này được đăng ký bằng Google. Vui lòng đăng nhập bằng Google." 
             });
         }
 
-        // 4. So sánh mật khẩu cho tài khoản truyền thống
+        // 4. So sánh mật khẩu
         const isMatch = await bcrypt.compare(password, user.password);
         
         if (!isMatch) {
             return res.status(401).json({ message: "Email hoặc mật khẩu không đúng" });
         }
 
-        // 5. Nếu đăng nhập thành công, cập nhật lastLogin và tạo token
+        // 5. Thành công
         user.lastLogin = new Date();
-        await user.save(); // Lưu lại ngày đăng nhập mới nhất
+        await user.save();
 
         const token = generateToken(user._id, user.email, user.name, user.role); 
         
+        // ✅ ĐÃ SỬA: Trả về đầy đủ thông tin để Frontend vẽ giao diện
         res.status(200).json({ 
-            token, 
-            role: user.role 
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            avatar: user.avatar,
+            role: user.role,
+            token
         });
 
     } catch (error) {
@@ -134,6 +149,48 @@ export const login = async (req, res) => {
     }
 };
 
+export const updateUserProfile = async (req, res) => {
+  try {
+    // Tìm user theo ID (lấy từ token)
+    const user = await User.findById(req.user._id);
+
+    if (user) {
+      // Cập nhật từng trường nếu có gửi lên
+      user.name = req.body.name || user.name;
+      user.email = req.body.email || user.email;
+      user.avatar = req.body.avatar || user.avatar;
+
+      // 🔥 CẬP NHẬT SKILLS
+      // Nếu có gửi skills lên thì thay thế mảng cũ bằng mảng mới
+      if (req.body.skills) {
+        user.skills = req.body.skills; 
+      }
+
+      // Nếu có gửi password mới thì cập nhật (Middleware trong Model sẽ tự mã hóa)
+      if (req.body.password) {
+        user.password = req.body.password;
+      }
+
+      const updatedUser = await user.save();
+
+      // Trả về thông tin mới nhất
+      res.json({
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        skills: updatedUser.skills, // ✅ Đã có skill mới
+        avatar: updatedUser.avatar,
+        token: req.user.token, // Giữ nguyên token cũ nếu cần hoặc generate mới
+      });
+    } else {
+      res.status(404).json({ message: "Không tìm thấy người dùng" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Lỗi khi cập nhật hồ sơ" });
+  }
+};
 
 // --------------------------------------------------------------------------
 // --- CHỨC NĂNG: Xử lý Callback từ Google OAuth (Đã sửa log) ---

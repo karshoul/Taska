@@ -7,7 +7,7 @@ const api = axios.create({
   baseURL: BASE_URL,
 });
 
-// Sử dụng interceptor để thêm token vào mỗi request
+// 1. Request Interceptor (Giữ nguyên của bạn)
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
@@ -16,7 +16,20 @@ api.interceptors.request.use(
     }
     return config;
   },
+  (error) => Promise.reject(error)
+);
+
+// 2. 🔥 THÊM RESPONSE INTERCEPTOR (Tự động Logout khi lỗi Token)
+api.interceptors.response.use(
+  (response) => response.data, // Trả về data luôn cho gọn code gọi API
   (error) => {
+    if (error.response && error.response.status === 401) {
+      // Nếu Backend báo 401 (Unauthorized) -> Xóa token và reload
+      localStorage.removeItem("token");
+      localStorage.removeItem("role");
+      localStorage.removeItem("userInfo");
+      window.location.href = "/login";
+    }
     return Promise.reject(error);
   }
 );

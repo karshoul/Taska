@@ -1,4 +1,3 @@
-// file: models/settingsModel.js
 import mongoose from 'mongoose';
 
 const settingsSchema = new mongoose.Schema({
@@ -7,6 +6,7 @@ const settingsSchema = new mongoose.Schema({
         default: 'main_settings',
         unique: true,
     },
+    // --- CÀI ĐẶT CŨ ---
     isMaintenance: {
         type: Boolean,
         default: false,
@@ -15,21 +15,49 @@ const settingsSchema = new mongoose.Schema({
         type: Boolean,
         default: true,
     },
-});
+    // --- 🆕 CÀI ĐẶT MỚI (Khớp với Frontend) ---
+    isReadOnly: {
+        type: Boolean,
+        default: false,
+    },
+    maxProjectsPerUser: {
+        type: Number,
+        default: 10,
+    },
+    systemAnnouncement: {
+        type: String,
+        default: "",
+    }
+}, { timestamps: true }); // Thêm timestamps để biết cấu hình cập nhật lúc nào
 
 const Settings = mongoose.model('Settings', settingsSchema);
 
-// ✅ HÀM getSettings ĐÃ SỬA LẠI
+// ✅ HÀM getSettings: Lấy hoặc Tự tạo bản ghi duy nhất
 export const getSettings = async () => {
-    const settings = await Settings.findOneAndUpdate(
-        { singleton: 'main_settings' }, // 1. Tìm bản ghi
-        { $setOnInsert: { singleton: 'main_settings' } }, // 2. Nếu không tìm thấy, đặt giá trị này khi tạo mới
-        { 
-            new: true,    // 3. Trả về bản ghi (dù là cũ hay mới)
-            upsert: true  // 4. "upsert" = "update" hoặc "insert". TẠO MỚI nếu không tìm thấy
-        }
-    );
-    return settings;
+    try {
+        const settings = await Settings.findOneAndUpdate(
+            { singleton: 'main_settings' }, 
+            { 
+                $setOnInsert: { 
+                    singleton: 'main_settings',
+                    isMaintenance: false,
+                    allowRegistrations: true,
+                    isReadOnly: false,
+                    maxProjectsPerUser: 10,
+                    systemAnnouncement: ""
+                } 
+            }, 
+            { 
+                new: true,    
+                upsert: true,
+                setDefaultsOnInsert: true // Tự động áp dụng các default trong Schema
+            }
+        );
+        return settings;
+    } catch (error) {
+        console.error("❌ Lỗi lấy Settings:", error);
+        return null;
+    }
 };
 
 export default Settings;
