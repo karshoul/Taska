@@ -15,13 +15,13 @@ import api from '../lib/axios';
 
 // 1. Cấu hình Firebase
 const firebaseConfig = {
-  apiKey: "AIzaSyBYvp7Y70-noCJBB3KFqs4GzuSnSerQgOo",
-  authDomain: "taska-docs.firebaseapp.com",
-  databaseURL: "https://taska-docs-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "taska-docs",
-  storageBucket: "taska-docs.firebasestorage.app",
-  messagingSenderId: "712860882526",
-  appId: "1:712860882526:web:01176757a5bc0c63e446cf"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DB_URL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
