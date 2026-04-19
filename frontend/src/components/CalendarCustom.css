@@ -1,0 +1,99 @@
+/* CalendarCustom.css */
+
+/* Bo tròn container lịch */
+.fc {
+    font-family: inherit !important;
+}
+
+.fc-theme-standard .fc-scrollgrid {
+    border: none !important;
+}
+
+/* Tùy chỉnh các ô ngày */
+.fc-daygrid-day {
+    transition: background-color 0.2s ease;
+}
+
+.fc-daygrid-day:hover {
+    background-color: #f8fafc !important;
+}
+
+/* Custom Header Toolbar */
+.fc-header-toolbar {
+    margin-bottom: 2rem !important;
+    padding: 0 10px;
+}
+
+.fc-toolbar-title {
+    font-size: 1.1rem !important;
+    font-weight: 900 !important;
+    text-transform: uppercase;
+    letter-spacing: -0.5px;
+    color: #1e293b;
+}
+
+/* Custom các nút bấm Pre, Next, Today */
+.fc-button-primary {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #64748b !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    font-size: 9px !important;
+    letter-spacing: 1px;
+    border-radius: 14px !important;
+    padding: 10px 18px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02) !important;
+}
+
+.fc-button-primary:hover {
+    background-color: #f8fafc !important;
+    color: #4f46e5 !important;
+    border-color: #4f46e5 !important;
+}
+
+.fc-button-active {
+    background-color: #4f46e5 !important;
+    color: white !important;
+    border-color: #4f46e5 !important;
+    box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.2) !important;
+}
+
+/* Ẩn bớt các đường kẻ bảng cho sạch sẽ */
+.fc td, .fc th {
+    border-style: dashed !important;
+    border-color: #f1f5f9 !important;
+}
+
+/* Custom số ngày */
+.fc-daygrid-day-number {
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    color: #94a3b8 !important;
+    padding: 10px !important;
+}
+
+/* Dấu chấm sự kiện */
+.fc-daygrid-event {
+    white-space: nowrap !important; /* Không cho xuống dòng */
+    overflow: hidden !important;
+    margin-top: 2px !important;
+    margin-bottom: 2px !important;
+    border-radius: 10px !important; /* Bo tròn đều cho đẹp */
+}
+
+/* Ép nội dung task luôn nằm gọn trong 1 ô */
+.fc-event-main {
+    padding: 0 !important;
+}
+
+/* Loại bỏ dấu chấm mặc định của FullCalendar nếu có */
+.fc-daygrid-event-dot {
+    display: none !important;
+}
+
+/* Nếu task vẫn bị dài, dùng cái này để ép cứng width */
+.fc-v-event, .fc-h-event {
+    display: block !important;
+    border: none !important;
+}

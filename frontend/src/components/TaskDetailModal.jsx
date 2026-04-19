@@ -1,342 +1,600 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import api from "@/lib/axios";
 import { motion, AnimatePresence } from "framer-motion";
-// ✅ Import thêm icon CheckCircle2 và RotateCcw
-import { Folder, X, PlusCircle, ChevronDown, Loader2, CalendarClock, Clock, PenLine, Flame, Zap, Coffee, CheckCircle2, RotateCcw } from "lucide-react";
+import { 
+    Folder, X, ChevronDown, Loader2, CalendarClock, Clock, 
+    PenLine, Flame, Zap, Coffee, Activity, Send, Pencil, User, 
+    Trash2, Paperclip, CheckCircle2, Briefcase,
+    ImageIcon,
+    RotateCcw
+} from "lucide-react";
+import { useAuth } from "../contexts/AuthContext"; 
+import AttachmentList from "./AttachmentList";
 
-// --- Custom Component: Select (Giữ nguyên) ---
-const CustomSelect = ({ options, selected, onSelect, placeholder }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const selectedLabel = options.find(opt => opt.value === selected)?.label || placeholder;
-    return (
-        <div className="relative">
-            <button type="button" onClick={() => setIsOpen(!isOpen)} className="w-full flex items-center justify-between px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-400 bg-white transition-all shadow-sm hover:border-purple-300">
-                <span className="text-sm font-medium text-gray-700 truncate">{selectedLabel}</span>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isOpen && (
-                <div className="absolute z-50 w-full mt-1 bg-white rounded-xl shadow-xl border border-gray-100 max-h-48 overflow-y-auto p-1">
-                    {options.map(option => (
-                        <div key={option.value} onClick={() => { onSelect(option.value); setIsOpen(false); }} className="px-3 py-2 text-sm text-gray-700 hover:bg-purple-50 rounded-lg cursor-pointer truncate transition-colors">
-                            {option.label}
+const TaskDetailModal = ({ task, open, onClose, handleTaskChanged }) => {
+    const { userInfo } = useAuth(); 
+
+    // --- STATES ---
+    const [isEditing, setIsEditing] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [projects, setProjects] = useState([]);
+    const [contacts, setContacts] = useState([]);
+    const [selectedCollaborators, setSelectedCollaborators] = useState([]);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [commentToDelete, setCommentToDelete] = useState(null);
+
+    const [editedTask, setEditedTask] = useState({
+        title: "",
+        description: "",
+        project: "none",
+        priority: "medium",
+        deadline: "",
+        existingAttachments: [],
+        newFiles: []
+    });
+
+    const [commentText, setCommentText] = useState("");
+    const [localComments, setLocalComments] = useState([]);
+    const [activeTab, setActiveTab] = useState("comments");
+
+    // --- EFFECT: NẠP DỮ LIỆU KHI MỞ MODAL ---
+    useEffect(() => {
+        // Hàm fetch dữ liệu bổ trợ (Cách 1: Định nghĩa bên trong useEffect)
+        const fetchMetadata = async () => {
+            try {
+                const [projectsData, contactsData] = await Promise.all([
+                    api.get("/projects"),
+                    api.get("/users/contacts")
+                ]);
+
+                // Axios Interceptor đã bóc tách data, nên nhận trực tiếp
+                const pList = Array.isArray(projectsData) ? projectsData : (projectsData?.projects || []);
+                const cList = Array.isArray(contactsData) ? contactsData : (contactsData?.contacts || []);
+
+                setProjects([...pList]);
+                setContacts([...cList]);
+                console.log("DỮ LIỆU ĐÃ NẠP - DỰ ÁN:", pList.length);
+            } catch (error) {
+                console.error("Lỗi fetch Metadata:", error);
+            }
+        };
+
+        if (open && task) {
+            fetchMetadata();
+            setLocalComments(task?.comments || []);
+            const currentProjectId = task?.project?._id || task?.project || "none";
+
+// 2. Gán nó vào state
+setEditedTask(prev => ({
+    ...prev,
+    title: task?.title || "",
+    description: task?.description || "",
+    project: String(currentProjectId), // 👈 Phải dùng đúng cái tên biến ở dòng trên thì nó mới hết báo lỗi unused
+    priority: task?.priority || "medium",
+    deadline: task?.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : "",
+    existingAttachments: task?.attachments || [],
+    newFiles: []
+}));
+            setSelectedCollaborators(task?.collaborators?.map(c => c._id || c) || []);
+        }
+    }, [open, task?._id]); // Chỉ chạy khi mở hoặc đổi task, mảng dependency cố định 2 phần tử
+
+    // Thêm useEffect này để reset trạng thái khi đóng modal
+useEffect(() => {
+    if (!open) {
+        setIsEditing(false);
+    }
+}, [open]);
+
+const toggleStatus = async () => {
+    try {
+        setLoading(true);
+        const formData = new FormData();
+
+        // 🔍 Kiểm tra trạng thái hiện tại của task
+        // Nếu đang là Done thì chuyển về "In Progress", ngược lại thì chuyển thành "Done"
+        const newStatus = task.status === "Done" ? "In Progress" : "Done";
+        
+        formData.append("status", newStatus); 
+
+        // Các phần bảo hiểm dữ liệu giữ nguyên để tránh lỗi 500
+        formData.append("existingAttachments", JSON.stringify(task.attachments || []));
+        formData.append("title", task.title);
+        if (task.project) {
+            formData.append("project", task.project._id || task.project);
+        }
+
+        await api.put(`/tasks/${task._id}`, formData, {
+            headers: { "Content-Type": "multipart/form-data" }
+        });
+        
+        // Cập nhật xong thì reload lại dữ liệu
+        if (handleTaskChanged) await handleTaskChanged(); 
+        
+        // Thông báo cho sếp biết trạng thái mới
+        toast.success(newStatus === "Done" ? "Đã xong việc! 🎉" : "Đã chuyển về trạng thái Đang làm ✍️");
+        
+        // Tùy chọn: Nếu sếp muốn chuyển về Done thì đóng modal, còn chuyển về Đang làm thì giữ lại để sửa tiếp
+        if (newStatus === "Done") {
+            setIsEditing(false);
+            onClose();
+        }
+    } catch (error) {
+        console.error("Lỗi chuyển trạng thái:", error);
+        toast.error("Không thể thay đổi trạng thái");
+    } finally {
+        setLoading(false);
+    }
+};
+
+    // --- HANDLERS ---
+    const handleSave = async () => {
+        console.log("DỮ LIỆU CHUẨN BỊ GỬI ĐI:", editedTask.project);
+        try {
+            setLoading(true);
+            const formData = new FormData();
+            formData.append("title", editedTask.title || "");
+            formData.append("description", editedTask.description || "");
+            formData.append("project", editedTask.project || "none");
+            formData.append("priority", editedTask.priority || "medium");
+            formData.append("deadline", editedTask.deadline || "");
+            formData.append("collaborators", JSON.stringify(selectedCollaborators));
+            formData.append("existingAttachments", JSON.stringify(editedTask.existingAttachments));
+
+            if (editedTask.newFiles?.length > 0) {
+                editedTask.newFiles.forEach(file => formData.append("attachments", file));
+            }
+
+            await api.put(`/tasks/${task._id}`, formData, {
+                headers: { "Content-Type": "multipart/form-data" }
+            });
+            
+            setIsEditing(false);
+            if (handleTaskChanged) await handleTaskChanged(); 
+            toast.success("Cập nhật thành công!");
+        } catch (error) {
+            toast.error("Lỗi lưu dữ liệu!");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAddComment = async () => {
+        if (!commentText.trim()) return;
+        try {
+            const res = await api.post(`/tasks/${task._id}/comments`, { content: commentText.trim() });
+            const newCmt = res; 
+            newCmt.user = { _id: userInfo?._id, name: userInfo?.name, avatar: userInfo?.avatar };
+            setLocalComments(prev => [...prev, newCmt]);
+            setCommentText("");
+            if (handleTaskChanged) handleTaskChanged();
+        } catch (error) { toast.error("Lỗi gửi bình luận"); }
+    };
+
+    const handleDeleteComment = async () => {
+        if (!commentToDelete) return;
+        try {
+            await api.delete(`/tasks/${task._id}/comments/${commentToDelete}`);
+            setLocalComments(prev => prev.filter(c => c._id !== commentToDelete));
+            setDeleteConfirmOpen(false);
+            toast.success("Đã xóa bình luận");
+        } catch (error) { toast.error("Lỗi xóa"); }
+    };
+
+    if (!task) return null;
+
+    // Helper hiện ảnh không bao giờ rỗng để tránh lỗi src=""
+    const getAvatar = (userObj) => {
+    // Nếu userObj là Object và có avatar, dùng avatar đó. Nếu không, dùng UI Avatars
+    const name = userObj?.name || "U";
+    const avatar = userObj?.avatar;
+    
+    if (avatar) return avatar;
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff`;
+};
+
+    const handleRemoveNewFile = (indexToRemove) => {
+    setEditedTask(prev => ({
+        ...prev,
+        newFiles: prev.newFiles.filter((_, index) => index !== indexToRemove)
+    }));
+};
+
+if (!open || !task) return null;
+
+if (isEditing) {
+    console.log("--- DEBUG INPUT VALUES ---");
+    console.log("Title:", typeof editedTask.title, editedTask.title);
+    console.log("Desc:", typeof editedTask.description, editedTask.description);
+    console.log("Deadline:", typeof editedTask.deadline, editedTask.deadline);
+    console.log("Project:", typeof editedTask.project, editedTask.project);
+    console.log("Priority:", typeof editedTask.priority, editedTask.priority);
+}
+
+    return createPortal(
+        <AnimatePresence>
+            {/* Modal Xác nhận Xóa */}
+            {deleteConfirmOpen && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[1100] bg-gray-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="absolute inset-0" onClick={() => setDeleteConfirmOpen(false)} />
+                    <div className="relative bg-white p-8 rounded-[35px] shadow-2xl max-w-xs w-full text-center border border-gray-50 z-10">
+                        <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-red-100/50"><Trash2 size={24}/></div>
+                        <h3 className="font-black text-gray-800 text-lg uppercase tracking-tight">Xóa bình luận?</h3>
+                        <p className="text-[11px] text-gray-400 mt-2 mb-6 leading-relaxed">Sếp chắc chắn muốn dọn dẹp nó chứ?</p>
+                        <div className="flex gap-3">
+                            <button onClick={() => setDeleteConfirmOpen(false)} className="flex-1 py-3 text-xs font-black text-gray-400 hover:text-gray-600 transition-colors uppercase">Hủy</button>
+                            <button onClick={handleDeleteComment} className="flex-1 py-3 bg-red-500 text-white rounded-2xl text-xs font-black shadow-lg shadow-red-200 hover:bg-red-600 transition-all uppercase tracking-widest">Xóa</button>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
+            {open && (
+                <>
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[999]" />
+                    <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="fixed inset-0 m-auto w-full max-w-5xl h-[90vh] bg-white rounded-[40px] shadow-2xl z-[1000] overflow-hidden flex flex-col" >
+                        
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-8 border-b border-gray-50 bg-white">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 rounded-2xl bg-indigo-50 text-indigo-600"><Folder size={20}/></div>
+                                <div>
+                                    <h2 className="text-sm font-black text-gray-800 uppercase tracking-tighter">Chi tiết công việc</h2>
+                                    <p className="text-[11px] text-gray-400 font-medium">#{task._id?.slice(-6)}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => setIsEditing(!isEditing)} className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isEditing ? "bg-indigo-600 text-white shadow-lg shadow-indigo-100" : "bg-gray-50 text-gray-500 hover:bg-gray-100"}`}>
+                                    <Pencil size={14} /> {isEditing ? "Hủy sửa" : "Chỉnh sửa"}
+                                </button>
+                                <button onClick={onClose} className="p-2.5 hover:bg-red-50 hover:text-red-500 rounded-xl text-gray-400 transition-all"><X size={20} /></button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                                {/* CỘT TRÁI */}
+                                <div className="lg:col-span-2 space-y-8">
+                                    {isEditing ? (
+    <div className="space-y-6">
+        <div className="space-y-2">
+            <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Tiêu đề</label>
+            <input 
+            type="text" 
+            value={editedTask.title || ""} 
+            onChange={(e) => setEditedTask({...editedTask, title: e.target.value})} 
+            className="w-full text-2xl font-black border-none bg-gray-50 p-4 rounded-2xl focus:ring-2 focus:ring-indigo-100 outline-none" />
+        </div>
+        
+        <div className="space-y-2">
+            <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Mô tả</label>
+            <textarea rows={5} value={editedTask.description || ""} onChange={(e) => setEditedTask({...editedTask, description: e.target.value})} className="w-full p-5 bg-gray-50 border-none rounded-[30px] text-sm focus:ring-2 focus:ring-indigo-100 outline-none resize-none" />
+        </div>
+
+        {/* --- PHẦN 1: HIỂN THỊ FILE CŨ ĐỂ XÓA --- */}
+        {editedTask.existingAttachments?.length > 0 && (
+            <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase ml-1">File hiện có (Bấm X để xóa)</label>
+                <div className="flex flex-wrap gap-3">
+                    {editedTask.existingAttachments.map((file, idx) => (
+                        <div key={idx} className="relative group w-20 h-20 rounded-2xl overflow-hidden border border-gray-100 bg-white shadow-sm">
+                            {/\.(jpg|jpeg|png|webp|avif|gif)$/i.test(file.url) ? (
+                                <img src={file.url} className="w-full h-full object-cover" alt="old" />
+                            ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 text-indigo-500">
+                                    <Paperclip size={18} />
+                                    <span className="text-[8px] font-bold mt-1 px-1 truncate w-full text-center">{file.name}</span>
+                                </div>
+                            )}
+                            {/* Nút xóa file cũ */}
+                            <button 
+                                onClick={() => setEditedTask({
+                                    ...editedTask, 
+                                    existingAttachments: editedTask.existingAttachments.filter((_, i) => i !== idx)
+                                })}
+                                className="absolute inset-0 bg-red-500/90 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center text-white"
+                                title="Xóa file này"
+                            >
+                                <Trash2 size={18} />
+                            </button>
                         </div>
                     ))}
                 </div>
-            )}
+            </div>
+        )}
+
+        {/* --- PHẦN 2: CHỌN THÊM FILE MỚI --- */}
+        <div className="space-y-2">
+            <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Thêm tài liệu mới</label>
+            <div className="p-8 border-2 border-dashed border-gray-100 rounded-[30px] hover:border-indigo-200 transition-all group flex flex-col items-center justify-center gap-3 cursor-pointer relative bg-gray-50/30">
+                <input 
+    type="file" 
+    multiple 
+    key={isEditing ? "input-file-editing" : "input-file-view"}
+    className="absolute inset-0 opacity-0 cursor-pointer" 
+    onChange={(e) => {
+        const files = e.target.files;
+        if (files && files.length > 0) {
+            const filesArray = Array.from(files);
+            setEditedTask(prev => ({
+                ...prev,
+                newFiles: [...(prev.newFiles || []), ...filesArray] 
+            }));
+            
+            // 3. Reset giá trị trực tiếp trên phần tử DOM
+            e.target.value = ""; 
+        }
+    }} 
+/>
+                <Paperclip className="w-6 h-6 text-gray-300 group-hover:text-indigo-500" />
+                <span className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
+                    {editedTask.newFiles?.length > 0 ? `Đã chọn thêm ${editedTask.newFiles.length} file` : "Chọn tài liệu từ máy"}
+                </span>
+            </div>
+            
+            {/* Preview file mới chọn (Nâng cấp có nút xóa) */}
+{/* Preview file mới chọn (Nâng cấp có nút xóa) */}
+{editedTask.newFiles?.length > 0 && (
+    <div className="space-y-2 mt-4">
+        <label className="text-[10px] font-black text-indigo-400 uppercase ml-1 tracking-widest">
+            Tài liệu sắp thêm mới ({editedTask.newFiles.length})
+        </label>
+        <div className="flex flex-wrap gap-3">
+            {editedTask.newFiles.map((file, idx) => {
+                // Kiểm tra xem file có phải là ảnh không
+                const isImg = file.type.startsWith('image/');
+                
+                return (
+                    <div key={`newfile-${file.name}-${idx}`} className="relative group w-20 h-20 rounded-2xl overflow-hidden border-2 border-indigo-100 bg-white shadow-sm transition-all hover:border-indigo-300">
+                        {isImg ? (
+                            <FileImagePreview file={file} />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-indigo-50 text-indigo-500 p-1">
+                                <Paperclip size={18} />
+                                <span className="text-[7px] font-bold mt-1 truncate w-full text-center px-1">
+                                    {file.name}
+                                </span>
+                            </div>
+                        )}
+                        
+                        {/* NÚT XÓA FILE MỚI CHỌN */}
+                        <button 
+                            type="button"
+                            onClick={() => handleRemoveNewFile(idx)}
+                            className="absolute inset-0 bg-indigo-600/90 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center text-white"
+                        >
+                            <X size={20} strokeWidth={3} />
+                        </button>
+                    </div>
+                );
+            })}
         </div>
-    );
-};
+    </div>
+)}
+        </div>
 
-// --- Custom Component: Modal Tạo Project (Giữ nguyên) ---
-const CreateProjectModal = ({ onClose, onSubmit }) => {
-    const [name, setName] = useState("");
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    return createPortal(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
-            <motion.div initial={{scale:0.95, opacity:0}} animate={{scale:1, opacity:1}} className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border border-white/20" onClick={(e) => e.stopPropagation()}>
-                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2"><PlusCircle className="w-5 h-5 text-purple-600"/> Tạo dự án mới</h3>
-                <input autoFocus type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nhập tên dự án..." className="w-full px-4 py-2.5 border border-gray-300 rounded-xl mb-4 focus:ring-2 focus:ring-purple-500 outline-none transition-all" />
-                <div className="flex justify-end gap-2">
-                    <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">Hủy</button>
-                    <button onClick={async () => { setIsSubmitting(true); await onSubmit(name); setIsSubmitting(false); }} disabled={isSubmitting} className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-xl flex items-center gap-2 shadow-lg shadow-purple-200 transition-all">
-                        {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin"/> : "Tạo dự án"}
-                    </button>
-                </div>
-            </motion.div>
-        </div>, document.body
-    );
-};
-
-const PRIORITY_OPTIONS = [
-    { value: 'high', label: 'Cao', icon: Flame, color: 'bg-red-100 text-red-600 border-red-200' },
-    { value: 'medium', label: 'Trung bình', icon: Zap, color: 'bg-yellow-100 text-yellow-600 border-yellow-200' },
-    { value: 'low', label: 'Thấp', icon: Coffee, color: 'bg-blue-100 text-blue-600 border-blue-200' }
-];
-
-const TaskDetailModal = ({ task, open, onClose, handleTaskChanged }) => {
-    const [isEditing, setIsEditing] = useState(false);
-    const [editedTask, setEditedTask] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [isClient, setIsClient] = useState(false);
     
-    const [projects, setProjects] = useState([]);
-    const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 
-    useEffect(() => { setIsClient(true); }, []);
-
-    const fetchProjects = useCallback(async () => {
-        try {
-            const res = await api.get("/projects");
-            setProjects(res.data || []);
-        } catch (error) { toast.error("Lỗi tải dự án"); }
-    }, []);
-
-    useEffect(() => { if (open) fetchProjects(); }, [open, fetchProjects]);
-
-    useEffect(() => {
-        if (task) {
-            setEditedTask({
-                title: task.title,
-                description: task.description || "",
-                deadline: task.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : "",
-                status: task.status,
-                project: task.project,
-                priority: task.priority || 'medium',
-            });
-            setIsEditing(false);
-        }
-    }, [task]);
-
-    const projectOptions = useMemo(() => [
-        { value: 'none', label: '(Không có dự án)' },
-        ...projects.map(p => ({ value: p._id, label: p.name })),
-    ], [projects]);
-
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setEditedTask((prev) => ({ ...prev, [name]: value }));
-    };
-
-    const handleProjectChange = (projectId) => {
-        const projectObj = projects.find(p => p._id === projectId);
-        setEditedTask(prev => ({ ...prev, project: projectObj || null }));
-    };
-
-    const handleCreateProject = async (newProjectName) => {
-        try {
-            const res = await api.post("/projects", { name: newProjectName });
-            toast.success(`Đã tạo dự án "${newProjectName}"`);
-            await fetchProjects();
-            setEditedTask(prev => ({ ...prev, project: res.data })); 
-            setIsProjectModalOpen(false);
-        } catch (error) { toast.error("Lỗi tạo dự án"); }
-    };
-
-    const handleUpdateTask = async (e) => {
-        e.preventDefault();
-        if (!editedTask.title.trim()) return toast.error("Tiêu đề trống!");
-        setLoading(true);
-        try {
-            await api.put(`/tasks/${task._id}`, { 
-                ...editedTask, 
-                project: editedTask.project?._id || null 
-            });
-            toast.success("Đã cập nhật!");
-            handleTaskChanged();
-            setIsEditing(false);
-        } catch (error) { toast.error("Lỗi cập nhật"); } 
-        finally { setLoading(false); }
-    };
-
-    // ✅ HÀM MỚI: Thay đổi trạng thái ngay trong Modal
-    const handleToggleStatus = async () => {
-        if (!task) return;
-        const newStatus = editedTask.status === 'active' ? 'complete' : 'active';
-        
-        try {
-            // Gọi API cập nhật
-            await api.put(`/tasks/${task._id}`, { status: newStatus });
-            
-            // Cập nhật State nội bộ để giao diện đổi màu ngay lập tức
-            setEditedTask(prev => ({ ...prev, status: newStatus }));
-            
-            // Thông báo ra ngoài danh sách chính
-            handleTaskChanged();
-            
-            toast.success(newStatus === 'complete' ? "Đã hoàn thành công việc! 🎉" : "Đã kích hoạt lại công việc! 🔄");
-        } catch (error) {
-            toast.error("Lỗi khi thay đổi trạng thái");
-        }
-    };
-
-    const createdDateFormatted = task?.createdAt 
-        ? new Date(task.createdAt).toLocaleString("vi-VN", { 
-            hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' 
-          }) 
-        : "N/A";
-
-    const getPriorityInfo = (level) => {
-        const config = PRIORITY_OPTIONS.find(opt => opt.value === level) || PRIORITY_OPTIONS[1];
-        const Icon = config.icon;
-        return { Icon, label: config.label, color: config.color };
-    };
-
-    return (
-        <>
-            {createPortal(
-                <AnimatePresence>
-                    {isClient && open && editedTask && (
-                        <>
-                            <motion.div key="backdrop" className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm" onClick={onClose} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
-                            <motion.div key="modal" className="fixed inset-0 z-40 flex items-center justify-center p-4" onClick={onClose} initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}>
-                                <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100" onClick={(e) => e.stopPropagation()}>
-                                    
-                                    {isEditing ? (
-                                        // --- FORM SỬA ---
-                                        <form onSubmit={handleUpdateTask} className="p-6">
-                                            <div className="flex justify-between items-center mb-6">
-                                                <h2 className="text-xl font-bold text-gray-800">✏️ Chỉnh sửa</h2>
-                                                <button type="button" onClick={() => setIsEditing(false)} className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition"><X className="w-5 h-5"/></button>
+        <button onClick={handleSave} disabled={loading} className="w-full py-4 bg-indigo-600 text-white rounded-[20px] font-black text-xs uppercase tracking-[2px] shadow-xl hover:bg-indigo-700 transition-all active:scale-[0.98]">
+            {loading ? <Loader2 className="animate-spin mx-auto" size={16} /> : "Xác nhận lưu thay đổi"}
+        </button>
+    </div>
+) : (
+                                        <div className="space-y-8">
+                                            <h1 className="text-4xl font-black text-gray-800 tracking-tighter leading-tight">{task.title}</h1>
+                                            <div className="bg-gray-50 p-6 rounded-[30px] border border-gray-50 text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                                                {task.description || "Chưa có mô tả sếp ạ."}
                                             </div>
+                                            <AttachmentList attachments={task.attachments} />
                                             
-                                            <div className="space-y-5">
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Tiêu đề</label>
-                                                    <input type="text" name="title" value={editedTask.title} onChange={handleChange} className="block w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all font-medium text-gray-800" disabled={loading} />
+                                            {/* Bình luận */}
+                                            <div className="pt-8 border-t border-gray-50">
+                                                <h3 className="text-xs font-black uppercase tracking-widest text-gray-800 mb-6 font-bold">Thảo luận ({localComments.length})</h3>
+                                                <div className="flex gap-3 mb-8 bg-gray-50 p-2 rounded-2xl focus-within:ring-2 focus-within:ring-indigo-100 transition-all">
+                                                    <input className="flex-1 bg-transparent border-none outline-none px-4 text-xs font-medium" placeholder="Viết ý kiến..." value={commentText} onChange={(e) => setCommentText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddComment()} />
+                                                    <button onClick={handleAddComment} className="p-3 bg-white text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Send size={16} /></button>
                                                 </div>
-                                                
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Mức độ ưu tiên</label>
-                                                    <div className="grid grid-cols-3 gap-2">
-                                                        {PRIORITY_OPTIONS.map((option) => (
-                                                            <button
-                                                                key={option.value}
-                                                                type="button"
-                                                                onClick={() => setEditedTask(prev => ({...prev, priority: option.value}))}
-                                                                className={`
-                                                                    flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-bold border transition-all
-                                                                    ${editedTask.priority === option.value 
-                                                                        ? `${option.color} ring-2 ring-offset-1 ring-gray-200` 
-                                                                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}
-                                                                `}
-                                                            >
-                                                                <option.icon className="w-3.5 h-3.5" />
-                                                                {option.label}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                <div>
-                                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Mô tả</label>
-                                                    <textarea name="description" value={editedTask.description} onChange={handleChange} rows="4" className="block w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none transition-all resize-none text-sm" disabled={loading}></textarea>
-                                                </div>
-                                                
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Hạn chót</label>
-                                                        <input type="datetime-local" name="deadline" value={editedTask.deadline} onChange={handleChange} className="block w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none text-sm" disabled={loading} />
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex justify-between items-center mb-1.5">
-                                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide">Dự án</label>
-                                                            <button type="button" onClick={() => setIsProjectModalOpen(true)} className="text-xs font-bold text-purple-600 hover:text-purple-800 flex items-center gap-1"><PlusCircle className="w-3 h-3"/> Mới</button>
-                                                        </div>
-                                                        <CustomSelect options={projectOptions} selected={editedTask.project?._id || "none"} onSelect={handleProjectChange} placeholder="Chọn dự án..." />
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="flex justify-end items-center gap-3 mt-8 pt-4 border-t border-gray-100">
-                                                <button type="button" onClick={() => setIsEditing(false)} className="px-5 py-2.5 text-sm font-medium rounded-xl text-gray-600 hover:bg-gray-100 transition-colors" disabled={loading}>Hủy bỏ</button>
-                                                <button type="submit" className="px-6 py-2.5 text-sm font-bold rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:shadow-lg hover:shadow-blue-200 transition-all disabled:opacity-70 flex items-center gap-2" disabled={loading}>
-                                                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : "Lưu thay đổi"}
-                                                </button>
-                                            </div>
-                                        </form>
-                                    ) : (
-                                        // --- CHẾ ĐỘ XEM CHI TIẾT ---
-                                        <div className="flex flex-col h-full">
-                                            {/* Header màu sắc */}
-                                            <div className={`p-6 pb-8 transition-colors duration-300 ${editedTask.status === "complete" ? "bg-green-50" : "bg-yellow-50"}`}>
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div className="flex gap-2">
-                                                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm transition-colors duration-300 ${
-                                                            editedTask.status === "complete" ? "bg-green-500 text-white" : "bg-yellow-400 text-yellow-900"
-                                                        }`}>
-                                                            {editedTask.status === "complete" ? "Đã hoàn thành" : "Đang thực hiện"}
-                                                        </span>
-                                                        
-                                                        {(() => {
-                                                            const p = getPriorityInfo(editedTask.priority);
-                                                            return (
-                                                                <span className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm bg-white border border-gray-200 text-gray-700`}>
-                                                                    <p.Icon className="w-3 h-3" /> {p.label}
-                                                                </span>
-                                                            )
-                                                        })()}
-                                                    </div>
-                                                    <button onClick={onClose} className="p-1.5 bg-white/50 hover:bg-white rounded-full transition-colors"><X className="w-5 h-5 text-gray-500"/></button>
-                                                </div>
-                                                <h2 className={`text-2xl font-bold text-gray-800 break-words leading-tight mt-3 ${editedTask.status === 'complete' ? 'line-through text-gray-500 opacity-80' : ''}`}>
-                                                    {editedTask.title}
-                                                </h2>
-                                            </div>
-
-                                            {/* Nội dung chính */}
-                                            <div className="px-6 py-6 -mt-6 bg-white rounded-t-3xl shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] flex-1">
-                                                
-                                                <div className="mb-6">
-                                                    <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Mô tả công việc</h4>
-                                                    <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap bg-gray-50 p-4 rounded-xl border border-gray-100">
-                                                        {editedTask.description || <span className="italic text-gray-400">Không có mô tả chi tiết.</span>}
-                                                    </div>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 gap-4 mb-6">
-                                                    <div className="p-3 rounded-xl border border-gray-100 bg-gray-50/50">
-                                                        <div className="flex items-center gap-2 text-gray-400 text-xs font-bold uppercase mb-1">
-                                                            <CalendarClock className="w-3.5 h-3.5"/> Ngày tạo
-                                                        </div>
-                                                        <p className="text-gray-700 font-semibold text-sm">{createdDateFormatted}</p>
-                                                    </div>
-
-                                                    <div className={`p-3 rounded-xl border ${editedTask.deadline ? "border-red-100 bg-red-50/50" : "border-gray-100 bg-gray-50/50"}`}>
-                                                        <div className="flex items-center gap-2 text-gray-400 text-xs font-bold uppercase mb-1">
-                                                            <Clock className={`w-3.5 h-3.5 ${editedTask.deadline ? "text-red-400" : ""}`}/> Hạn chót
-                                                        </div>
-                                                        <p className={`font-semibold text-sm ${editedTask.deadline ? "text-red-600" : "text-gray-400 italic"}`}>
-                                                            {editedTask.deadline ? new Date(editedTask.deadline).toLocaleString("vi-VN") : "Không có"}
-                                                        </p>
-                                                    </div>
-
-                                                    <div className="col-span-2 p-3 rounded-xl border border-blue-100 bg-blue-50/30 flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="p-2 bg-blue-100 rounded-lg text-blue-600"><Folder className="w-4 h-4"/></div>
-                                                            <div>
-                                                                <p className="text-xs font-bold text-blue-400 uppercase">Dự án</p>
-                                                                <p className="text-gray-800 font-semibold text-sm">{editedTask.project ? editedTask.project.name : "Chưa phân loại"}</p>
+                                                <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                                    {localComments.map((cmt, idx) => (
+                                                        <div key={idx} className="flex gap-3">
+                                                            <img src={getAvatar(cmt.user)} className="w-8 h-8 rounded-xl object-cover shadow-sm" alt="avt" />
+                                                            <div className="flex-1 bg-gray-50/50 rounded-2xl p-4 border border-gray-50">
+                                                                <div className="flex justify-between items-center mb-1">
+                                                                    <span className="text-[11px] font-black text-gray-800">{cmt.user?.name}</span>
+                                                                    <span className="text-[9px] text-gray-400 font-bold">{cmt.createdAt ? new Date(cmt.createdAt).toLocaleTimeString() : "Vừa xong"}</span>
+                                                                </div>
+                                                                <p className="text-xs text-gray-600 font-medium">{cmt.content}</p>
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                </div>
-
-                                                {/* Footer Actions - CÓ NÚT HOÀN THÀNH */}
-                                                <div className="pt-4 border-t border-gray-100 space-y-3">
-                                                    {/* ✅ NÚT TOGGLE STATUS LỚN */}
-                                                    <button 
-                                                        onClick={handleToggleStatus}
-                                                        className={`w-full py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 transform active:scale-95 ${
-                                                            editedTask.status === 'active' 
-                                                            ? 'bg-green-500 text-white hover:bg-green-600 shadow-green-200' 
-                                                            : 'bg-yellow-500 text-white hover:bg-yellow-600 shadow-yellow-200'
-                                                        }`}
-                                                    >
-                                                        {editedTask.status === 'active' ? <CheckCircle2 className="w-5 h-5"/> : <RotateCcw className="w-5 h-5"/>}
-                                                        {editedTask.status === 'active' ? "Đánh dấu hoàn thành" : "Kích hoạt lại công việc"}
-                                                    </button>
-
-                                                    <button onClick={() => setIsEditing(true)} className="w-full py-3 rounded-xl bg-white border-2 border-gray-100 text-gray-600 font-bold hover:bg-gray-50 hover:border-gray-200 transition-all flex items-center justify-center gap-2">
-                                                        <PenLine className="w-4 h-4"/> Chỉnh sửa nội dung
-                                                    </button>
+                                                    ))}
                                                 </div>
                                             </div>
+
+                                          {/* PHẦN NÚT BẤM DƯỚI CÙNG TRONG CHẾ ĐỘ SỬA */}
+<div className="flex gap-4 w-full mt-8">
+    
+    {/* Nút Toggle Trạng thái */}
+    <button 
+        onClick={toggleStatus} 
+        disabled={loading} 
+        className={`flex-1 py-4 rounded-[20px] font-black text-[10px] uppercase tracking-[1px] transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg ${
+            task.status === "Done" 
+            ? "bg-amber-50 text-amber-600 border border-amber-200 hover:bg-amber-100 shadow-amber-50" // Giao diện khi muốn chuyển lại "Đang làm"
+            : "bg-emerald-500 text-white hover:bg-emerald-600 shadow-emerald-100" // Giao diện khi muốn "Hoàn thành"
+        }`}
+    >
+        {loading ? <Loader2 className="animate-spin" size={16} /> : (
+            <>
+                {task.status === "Done" ? (
+                    <><RotateCcw size={14} /> Làm lại việc này</>
+                ) : (
+                    <><CheckCircle2 size={14} /> Hoàn thành ngay</>
+                )}
+            </>
+        )}
+    </button>
+
+    
+</div>
                                         </div>
                                     )}
                                 </div>
-                            </motion.div>
-                        </>
-                    )}
-                </AnimatePresence>,
-                document.body
+
+                                {/* CỘT PHẢI */}
+                                <div className="space-y-6">
+                                    <div className="bg-gray-50/30 rounded-[35px] p-8 border border-gray-50 space-y-8">
+                                        
+                                        {/* CHỌN DỰ ÁN */}
+                                        <div className="space-y-4">
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 font-bold"><Briefcase size={12}/> Dự án</label>
+                                            {isEditing ? (
+                                                <div className="relative group">
+                                                    <select 
+    className="..." 
+    value={editedTask?.project || "none"} 
+    onChange={(e) => setEditedTask({...editedTask, project: e.target.value})}
+>
+    <option value="none">✨ Việc cá nhân</option>
+    {projects.map(p => (
+        <option key={p._id} value={p._id}> {/* 🔥 value PHẢI LÀ p._id */}
+            📁 {p.name}
+        </option>
+    ))}
+</select>
+                                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border border-gray-50 shadow-sm">
+                                                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: task.project?.color || "#6366f1" }} />
+                                                    <span className="text-xs font-black text-gray-700 truncate">{task.project?.name || "Việc cá nhân"}</span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* CỘNG SỰ TÍCH CHỌN */}
+                                        <div className="space-y-4">
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 font-bold"><User size={12}/> Cộng sự ({selectedCollaborators.length})</label>
+                                            {isEditing ? (
+                                                <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                                                    {contacts.length > 0 ? contacts.map(contact => {
+                                                        const isSelected = selectedCollaborators.includes(contact._id);
+                                                        return (
+                                                            <button 
+                                                                key={contact._id} 
+                                                                onClick={(e) => { 
+                                                                    e.preventDefault(); 
+                                                                    setSelectedCollaborators(prev => isSelected ? prev.filter(id => id !== contact._id) : [...prev, contact._id]); 
+                                                                }} 
+                                                                className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${isSelected ? "bg-indigo-50 border-indigo-100 shadow-sm" : "bg-white border-gray-50 hover:border-gray-100"}`}
+                                                            >
+                                                                <div className="flex items-center gap-3 truncate">
+                                                                    <img src={getAvatar(contact)} className="w-8 h-8 rounded-xl object-cover shadow-sm" alt="avt" />
+                                                                    <span className={`text-[11px] font-black truncate ${isSelected ? "text-indigo-700" : "text-gray-600"}`}>{contact.name}</span>
+                                                                </div>
+                                                                {isSelected ? <CheckCircle2 size={16} className="text-indigo-600 flex-shrink-0" /> : <div className="w-4 h-4 rounded-full border-2 border-gray-100 flex-shrink-0" />}
+                                                            </button>
+                                                        );
+                                                    }) : <p className="text-[10px] text-gray-400 italic text-center py-4">Chưa có contact bạn bè sếp ạ.</p>}
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-2">
+    {task.collaborators && task.collaborators.length > 0 ? (
+        task.collaborators
+            /* 🔥 BƯỚC QUAN TRỌNG: Lọc bỏ chính mình khỏi danh sách hiển thị */
+            .filter(collab => {
+                const collabId = typeof collab === 'object' ? collab._id : collab;
+                return collabId !== userInfo?._id; 
+            })
+            .map((collab) => {
+                const userData = typeof collab === 'object' ? collab : { _id: collab };
+                
+                return (
+                    <div key={userData._id || Math.random()} className="group relative">
+                        <img 
+                            src={getAvatar(userData)} 
+                            className="w-9 h-9 rounded-xl border-2 border-white shadow-sm object-cover hover:scale-110 transition-all cursor-help" 
+                            alt={userData.name || "Cộng sự"} 
+                        />
+                        {/* Tooltip hiện tên khi hover */}
+                        {userData.name && (
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50 shadow-xl">
+                                {userData.name}
+                            </div>
+                        )}
+                    </div>
+                );
+            })
+    ) : (
+        <p className="text-[10px] text-gray-400 italic">Chưa có cộng sự tham gia</p>
+    )}
+
+    {/* Hiển thị dòng này nếu mảng có người nhưng sau khi lọc thì trống (tức là chỉ có mỗi mình sếp) */}
+    {task.collaborators?.length > 0 && 
+     task.collaborators.filter(c => (c._id || c) !== userInfo?._id).length === 0 && (
+        <p className="text-[10px] text-indigo-500 font-black italic tracking-tight">
+            ✨ Chỉ có mình sếp thực hiện
+        </p>
+    )}
+</div>
+                                            )}
+                                        </div>
+                                        {/* CHỌN MỨC ƯU TIÊN (Sidebar bên phải) */}
+<div className="space-y-4">
+    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 font-bold">
+        <Flame size={12}/> Mức ưu tiên
+    </label>
+    
+    {isEditing ? (
+        <div className="relative group">
+            <select 
+                // 🔥 "Tấm khiên" chống lỗi Controlled: Luôn có giá trị mặc định
+                value={editedTask.priority || "medium"} 
+                onChange={(e) => setEditedTask({...editedTask, priority: e.target.value})}
+                className="w-full bg-white border border-gray-100 p-4 rounded-2xl text-[11px] font-black outline-none shadow-sm appearance-none focus:ring-2 focus:ring-indigo-100 transition-all cursor-pointer"
+            >
+                <option value="high">🔥 Cao (High)</option>
+                <option value="medium">⚡ Trung bình (Medium)</option>
+                <option value="low">🍃 Thấp (Low)</option>
+            </select>
+            <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        </div>
+    ) : (
+        /* Chế độ chỉ xem */
+        <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border border-gray-50 shadow-sm">
+            <div 
+                className="w-2.5 h-2.5 rounded-full" 
+                style={{ backgroundColor: task.priority === 'high' ? '#FF4D4D' : task.priority === 'low' ? '#4DABFF' : '#FFC107' }} 
+            />
+            <span className="text-xs font-black text-gray-700 uppercase">
+                {task.priority === 'high' ? 'Cao' : task.priority === 'low' ? 'Thấp' : 'Trung bình'}
+            </span>
+        </div>
+    )}
+</div>
+
+                                        {/* THỜI HẠN */}
+                                        <div className="space-y-4">
+                                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2 font-bold"><Clock size={12}/> Hạn chót</label>
+                                            {isEditing ? (
+                                                <input type="datetime-local" value={editedTask?.deadline || ""} onChange={(e) => setEditedTask({...editedTask, deadline: e.target.value})} className="w-full bg-white border border-gray-100 p-4 rounded-2xl text-[11px] font-black outline-none shadow-sm focus:ring-2 focus:ring-indigo-100 transition-all" />
+                                            ) : (
+                                                <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border border-gray-50 shadow-sm font-bold">
+                                                    <CalendarClock size={16} className="text-indigo-500" />
+                                                    <span className="text-xs font-black text-gray-700">{task.deadline ? new Date(task.deadline).toLocaleString() : "Không giới hạn"}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                </>
             )}
-            
-            <AnimatePresence>
-                {isProjectModalOpen && <CreateProjectModal onClose={() => setIsProjectModalOpen(false)} onSubmit={handleCreateProject} />}
-            </AnimatePresence>
-        </>
+        </AnimatePresence>,
+        document.body
     );
 };
 

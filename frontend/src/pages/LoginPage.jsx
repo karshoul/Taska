@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import axios from "axios";
+// 1️⃣ Thay axios thường bằng api đã cấu hình
+import api from "../lib/axios"; 
 import { toast } from "sonner";
 import { useAuth } from "../contexts/AuthContext"; 
 import { useNavigate, Link } from "react-router-dom";
-import { CheckSquare, LogIn } from "lucide-react"; // Icon logo
+import { CheckSquare, LogIn } from "lucide-react";
 
 const GOOGLE_AUTH_URL = "http://localhost:5001/api/auth/google";
 
+// ... (Giữ nguyên Component GoogleIcon của bạn) ...
 const GoogleIcon = () => (
   <svg className="w-5 h-5 mr-2" viewBox="0 0 48 48" fill="none">
     <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.611 3.522-3.87 5.86-6.37 7.151-1.579.808-3.323 1.34-5.184 1.34-7.447 0-13.468-6.021-13.468-13.469 0-7.447 6.021-13.468 13.468-13.468 4.239 0 7.377 1.832 9.479 3.611l4.908-4.757C36.936 4.965 31.799 3 24.12 3c-11.025 0-19.96 8.935-19.96 19.96S13.095 42.92 24.12 42.92c9.816 0 17.065-7.55 19.243-16.797V20.083z" />
@@ -21,27 +23,33 @@ const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false); // Thêm trạng thái loading
 
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // Logic Login cũ giữ nguyên
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
+
     try {
-      const res = await axios.post("http://localhost:5001/api/auth/login", { email, password });
-      const { token, role } = res.data;
-      login(token, role);
-      if (role === 'admin' || role === 'super_admin') {
-          navigate('/admin', { replace: true });
-      } else {
-          navigate('/app', { replace: true });
-      }
+      // 2️⃣ Dùng api instance thay vì axios thường (URL ngắn gọn hơn)
+      const res = await api.post("/auth/login", { email, password });
+      
+      // Backend trả về: { token, role, _id, name, ... }
+      // 3️⃣ Truyền đủ 3 tham số vào hàm login: Token, Role, và User Info (chính là res)
+      login(res.token, res.role, res);
+      
+      // (Việc điều hướng đã được xử lý bên trong hàm login của AuthContext rồi)
+
     } catch (err) {
+      console.error(err);
       const msg = err.response?.data?.message || "Đăng nhập thất bại!";
       setError(msg);
       toast.error(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -49,18 +57,19 @@ const LoginPage = () => {
     window.location.href = GOOGLE_AUTH_URL;
   };
 
-  // Logic xử lý callback Google (giữ nguyên để an toàn)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("token");
     const role = params.get("role");
     const errorParam = params.get("error");
-
+    
+    // Nếu Google login trả về user info dạng query string thì parse ra (nếu có)
+    // Hoặc tạm thời login bằng token/role, sau đó gọi API lấy profile sau
     if (token && role) {
-      localStorage.setItem("token", token);
-      localStorage.setItem("role", role);
+      // Lưu ý: Google Redirect thường chỉ trả về Token/Role trên URL.
+      // Login tạm, sau đó App sẽ tự gọi API lấy User Info sau.
+      login(token, role, { role }); 
       window.history.replaceState({}, document.title, window.location.pathname);
-      login(token, role); 
     } else if (errorParam) {
       const msg = errorParam || "Đăng nhập Google thất bại.";
       toast.error(msg);
@@ -72,7 +81,7 @@ const LoginPage = () => {
   return (
     <div className="min-h-screen w-full flex items-center justify-center font-sans bg-[#F8F9FC] relative overflow-hidden selection:bg-indigo-100">
       
-      {/* BACKGROUND DECORATIONS (Giống Intro) */}
+      {/* BACKGROUND DECORATIONS */}
       <div className="absolute top-[-10%] right-[-5%] w-[600px] h-[600px] bg-purple-300/30 rounded-full blur-[120px]" />
       <div className="absolute bottom-[10%] left-[-10%] w-[500px] h-[500px] bg-blue-300/20 rounded-full blur-[120px]" />
 
@@ -82,16 +91,16 @@ const LoginPage = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
       >
-        {/* Header: Logo & Title */}
+        {/* Header */}
         <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-lg mb-4">
                 <CheckSquare className="w-7 h-7 text-white" />
             </div>
             <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">Chào mừng trở lại!</h2>
-            <p className="text-gray-500 mt-2 text-sm">Vui lòng đăng nhập để tiếp tục quản lý công việc.</p>
+            <p className="text-gray-500 mt-2 text-sm">Vui lòng đăng nhập để tiếp tục.</p>
         </div>
 
-        {/* Google Login Button */}
+        {/* Google Login */}
         <button
           onClick={handleGoogleLogin}
           className="w-full flex items-center justify-center px-4 py-3 bg-white border-2 border-gray-100 rounded-xl text-gray-700 font-bold hover:bg-gray-50 hover:border-gray-200 transition-all shadow-sm active:scale-[0.98]"
@@ -100,7 +109,6 @@ const LoginPage = () => {
           Đăng nhập bằng Google
         </button>
 
-        {/* Divider */}
         <div className="flex items-center my-6">
           <div className="flex-grow border-t border-gray-200"></div>
           <span className="px-4 text-xs font-bold text-gray-400 uppercase tracking-wider">Hoặc</span>
@@ -115,7 +123,7 @@ const LoginPage = () => {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@example.com"
+              placeholder="boss@gmail.com"
               className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white transition-all outline-none text-gray-800 placeholder-gray-400 font-medium"
               required
             />
@@ -148,14 +156,20 @@ const LoginPage = () => {
 
           <button
             type="submit"
-            className="w-full py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2"
+            disabled={loading}
+            className="w-full py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-200 transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            <LogIn className="w-5 h-5" />
-            Đăng nhập
+            {loading ? (
+                <span>Đang xử lý...</span>
+            ) : (
+                <>
+                    <LogIn className="w-5 h-5" />
+                    Đăng nhập
+                </>
+            )}
           </button>
         </form>
 
-        {/* Footer Link */}
         <p className="mt-8 text-center text-sm text-gray-500">
           Chưa có tài khoản?{" "}
           <Link to="/register" className="font-bold text-indigo-600 hover:text-indigo-800 transition-colors hover:underline">

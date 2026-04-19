@@ -1,8 +1,7 @@
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';      // ✅ Import bcryptjs
-import jwt from 'jsonwebtoken';   // ✅ Import jsonwebtoken
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
-console.log("✅ ĐÃ LOAD MODEL USER MỚI NHẤT");
 const userSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -27,6 +26,15 @@ const userSchema = new mongoose.Schema({
         enum: ['user', 'admin', 'super_admin'],
         default: 'user',
     },
+    avatar: {
+        type: String,
+        default: "" // Link ảnh đại diện (Cloudinary/Firebase)
+    },
+    // 🔥 MỚI: Dùng cho Smart Assign (Ví dụ: ["React", "Backend", "Design"])
+    skills: [{ 
+        type: String, 
+        trim: true 
+    }],
     googleId: {
         type: String,
         unique: true,
@@ -38,35 +46,28 @@ const userSchema = new mongoose.Schema({
     },
     lastLogin: {
         type: Date
-    }
+    },
+    contacts: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }]
 }, { timestamps: true });
 
-// Middleware để hash mật khẩu trước khi lưu
+// --- GIỮ NGUYÊN PHẦN MIDDLEWARE BCRYPT & JWT CỦA BẠN ---
 userSchema.pre('save', async function(next) {
-    if (!this.isModified('password') || !this.password) {
-        return next();
-    }
-    // ✅ Bật lại logic hash mật khẩu
+    if (!this.isModified('password') || !this.password) return next();
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
     next();
 });
 
-// ✅ Sửa lại hàm so sánh mật khẩu
 userSchema.methods.matchPassword = async function(enteredPassword) {
-    // `this.password` đã được select: false, nên cần lấy lại khi cần
     return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// ✅ Sửa lại hàm tạo token
 userSchema.methods.getSignedJwtToken = function() {
     return jwt.sign(
-        { 
-            id: this._id,
-            name: this.name,
-            email: this.email,
-            role: this.role
-        }, 
+        { id: this._id, name: this.name, email: this.email, role: this.role }, 
         process.env.JWT_SECRET, 
         { expiresIn: process.env.JWT_EXPIRE || '7d' }
     );

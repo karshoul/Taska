@@ -1,8 +1,8 @@
 import cron from 'node-cron';
 // ❗ Đảm bảo đường dẫn này đúng với cấu trúc dự án của bạn
-import Task from '../src/models/Task.js'; 
+import Task from '../models/Task.js'; 
 import { sendReminderEmail } from './emailService.js';
-import { createNotificationInternal }  from '../src/controllers/notificationController.js';
+import { createNotificationInternal }  from '../controllers/notificationController.js';
 
 // Hàm tính ngày tiếp theo (Code của bạn đã đúng)
 const getNextDate = (currentDate, frequency) => {

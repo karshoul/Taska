@@ -1,6 +1,7 @@
 import express from "express";
-import { register, login, googleAuthCallback } from "../controllers/authController.js";
+import { register, login, googleAuthCallback, updateUserProfile } from "../controllers/authController.js";
 import passport from "passport"; 
+import { protect } from "../middleWare/authMiddleware.js";
 
 const router = express.Router();
 
@@ -10,6 +11,7 @@ const router = express.Router();
 router.post("/register", register);
 router.post("/login", login);
 
+router.put('/profile', protect, updateUserProfile);
 // ------------------------------------
 // 2. Routes Đăng nhập bằng Google (OAuth 2.0)
 // ------------------------------------

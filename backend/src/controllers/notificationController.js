@@ -3,15 +3,23 @@ import Notification from "../models/Notification.js";
 // Lấy danh sách thông báo của user đang login
 export const getMyNotifications = async (req, res) => {
     try {
-        const notifications = await Notification.find({ user: req.user._id })
-            .sort({ createdAt: -1 }) // Mới nhất lên đầu
-            .limit(20); // Lấy 20 cái gần nhất
+        const userId = req.user._id;
+
+        const notifications = await Notification.find({ recipient: userId }) // 🔥 SỬA: dùng recipient thay vì user
+            .populate("sender", "name avatar") // Lấy tên & ảnh người mời
+            .populate("project", "name color") // Lấy tên dự án để hiển thị
+            .sort({ createdAt: -1 })
+            .limit(20);
         
         // Đếm số lượng chưa đọc
-        const unreadCount = await Notification.countDocuments({ user: req.user._id, isRead: false });
+        const unreadCount = await Notification.countDocuments({ 
+            recipient: userId, // 🔥 SỬA: dùng recipient
+            isRead: false 
+        });
 
         res.status(200).json({ notifications, unreadCount });
     } catch (error) {
+        console.error("Lỗi getMyNotifications:", error);
         res.status(500).json({ message: "Lỗi tải thông báo" });
     }
 };
@@ -20,11 +28,18 @@ export const getMyNotifications = async (req, res) => {
 export const markAsRead = async (req, res) => {
     try {
         const { id } = req.params;
+        const userId = req.user._id;
 
         if (id === 'all') {
-            await Notification.updateMany({ user: req.user._id, isRead: false }, { isRead: true });
+            await Notification.updateMany(
+                { recipient: userId, isRead: false }, // 🔥 SỬA: dùng recipient
+                { isRead: true }
+            );
         } else {
-            await Notification.findByIdAndUpdate(id, { isRead: true });
+            await Notification.findOneAndUpdate(
+                { _id: id, recipient: userId }, // Đảm bảo chỉ đọc đúng thông báo của mình
+                { isRead: true }
+            );
         }
 
         res.status(200).json({ message: "Đã cập nhật trạng thái đọc" });
@@ -34,17 +49,19 @@ export const markAsRead = async (req, res) => {
 };
 
 // Hàm nội bộ để tạo thông báo từ các nơi khác (như Cron Job)
-export const createNotificationInternal = async ({ userId, title, message, type, link }) => {
+export const createNotificationInternal = async ({ recipientId, senderId, projectId, title, message, type, link }) => {
     try {
+        const Notification = (await import('../models/Notification.js')).default;
         await Notification.create({
-            user: userId,
-            title,
-            message,
-            type: type || 'info',
-            link
+            recipient: recipientId,
+            sender: senderId,
+            project: projectId,
+            title: title || "Công việc mới",
+            message: message || "Bạn được thêm vào một công việc mới",
+            type: 'PROJECT_INVITE', // Hoặc tạo type mới là 'TASK_ASSIGN'
+            inviteStatus: 'pending'
         });
-        console.log(`🔔 Đã tạo thông báo cho user ${userId}`);
     } catch (error) {
-        console.error("Lỗi tạo thông báo:", error);
+        console.error("Lỗi tạo thông báo tự động:", error);
     }
 };

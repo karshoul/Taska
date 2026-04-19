@@ -1,28 +1,14 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Home, LayoutDashboard, Users, Settings, BarChart3, ShieldAlert, Activity } from "lucide-react";
+import { LayoutDashboard, Users, Settings, BarChart3, ShieldAlert, Activity, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
-// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from "framer-motion";
+import api from "@/lib/axios"; // Dùng cái này cho nó đồng bộ sếp nhé
 
 import DashboardView from "../views/DashboardView";
 import UserManagementView from "../views/UserManagementView";
 import SettingsView from "../views/SettingsView";
 import ActivityLogView from "../views/ActivityLogView";
 import SystemHealthView from "../views/SystemHealthView";
-
-// Biến thể animation
-const pageVariants = {
-    initial: { opacity: 0, y: 20 },
-    in: { opacity: 1, y: 0 },
-    out: { opacity: 0, y: -20 },
-};
-
-const pageTransition = {
-    type: "tween",
-    ease: "anticipate",
-    duration: 0.4,
-};
 
 const AdminPage = () => {
     const navigate = useNavigate();
@@ -31,197 +17,116 @@ const AdminPage = () => {
     const [users, setUsers] = useState([]);
     const [allTasks, setAllTasks] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [userRole] = useState(localStorage.getItem("role") || "user");
 
-    // 1️⃣ LẤY ROLE TỪ LOCAL STORAGE
-    // Giả sử khi login bạn đã lưu: localStorage.setItem('role', 'super_admin')
-    const [userRole, setUserRole] = useState(localStorage.getItem("role") || "user");
+    const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+        if (currentView === "dashboard") {
+            // Với file axios.js mới của sếp, r, u, t sẽ nhận trực tiếp dữ liệu sạch
+            const [s, u, t] = await Promise.all([
+                api.get("/admin/stats"),
+                api.get("/admin/users"),
+                api.get("/admin/tasks")
+            ]);
 
-    const getAuthHeaders = useCallback(() => {
-        const token = localStorage.getItem("token");
-        return { headers: { Authorization: `Bearer ${token}` } };
-    }, []);
+            console.log("Check data Admin:", { s, u, t }); // Sếp F12 xem nó đã ra object chưa
 
-    // ... (Các hàm fetchStats, fetchAllUsers, fetchAllTasks GIỮ NGUYÊN) ...
-    const fetchStats = useCallback(async () => {
-        try {
-            const { data } = await axios.get("http://localhost:5001/api/admin/stats", getAuthHeaders());
-            setStats(data);
-        } catch (error) {
-            console.error("Lỗi lấy stats:", error);
+            setStats(s);   // Không dùng .data nữa sếp nhé
+            setUsers(u);   // Dữ liệu đã sạch sẵn rồi
+            setAllTasks(t); // t lúc này là { projects: [...], totalPersonalTasks: X }
         }
-    }, [getAuthHeaders]);
+    } catch (error) {
+        console.error("Lỗi đồng bộ Admin:", error);
+    } finally {
+        setIsLoading(false);
+    }
+}, [currentView]);
 
-    const fetchAllUsers = useCallback(async () => {
-        try {
-            const { data } = await axios.get("http://localhost:5001/api/admin/users", getAuthHeaders());
-            setUsers(data || []);
-        } catch (error) {
-            console.error("Lỗi lấy users:", error);
-            setUsers([]);
-        }
-    }, [getAuthHeaders]);
+    useEffect(() => { loadData(); }, [loadData]);
 
-    const fetchAllTasks = useCallback(async () => {
-        try {
-            const { data } = await axios.get("http://localhost:5001/api/admin/tasks", getAuthHeaders());
-            setAllTasks(data.tasks || []);
-        } catch (error) {
-            console.error("Lỗi lấy tasks:", error);
-            setAllTasks([]);
-        }
-    }, [getAuthHeaders]);
-
-    // Effect tải dữ liệu (GIỮ NGUYÊN)
-    useEffect(() => {
-        const loadData = async () => {
-            setIsLoading(true);
-            if (currentView === "dashboard") {
-                await Promise.all([fetchStats(), fetchAllUsers(), fetchAllTasks()]);
-            } else if (currentView === "users") {
-                await fetchAllUsers();
-            }
-            setIsLoading(false);
-        };
-        loadData();
-    }, [currentView, fetchStats, fetchAllUsers, fetchAllTasks]);
-
-
-    // 2️⃣ CẤU HÌNH MENU ĐỘNG DỰA TRÊN ROLE
     const adminMenuItems = [
         { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-        { key: "users", label: "Quản lý Users", icon: Users },
-        // 👇 Logic: Chỉ hiện Settings nếu là super_admin
+        { key: "users", label: "Người dùng", icon: Users },
         ...(userRole === 'super_admin' ? [
-    { key: "logs", label: "Nhật ký hệ thống", icon: ShieldAlert },
-    { key: "health", label: "Hệ thống & Backup", icon: Activity },
-    { key: "settings", label: "Cấu hình (VIP)", icon: Settings }
-] : []),
-        { key: "home", label: "Đăng xuất", icon: Home, action: () => {
-            localStorage.removeItem("token");
-            localStorage.removeItem("role");
-            navigate("/"); 
+            { key: "logs", label: "Nhật ký hệ thống", icon: ShieldAlert },
+            { key: "health", label: "Server & Backup", icon: Activity },
+            { key: "settings", label: "Cấu hình", icon: Settings }
+        ] : []),
+        { key: "logout", label: "Đăng xuất", icon: LogOut, action: () => {
+            localStorage.clear();
+            navigate("/login");
         }},
     ];
 
-    const viewTitles = {
-        dashboard: "📊 Dashboard Tổng quan",
-        users: "👥 Quản lý Người dùng",
-        settings: "⚙️ Cấu hình hệ thống",
-    };
-
-    const renderContent = () => {
-        if (isLoading) {
-            return <div className="text-center p-10 font-medium text-gray-500">Đang tải dữ liệu...</div>;
-        }
-        
-        switch (currentView) {
-            case "dashboard":
-                return (
-                    <motion.div key="dashboard" initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}>
-                        <DashboardView stats={stats} tasks={allTasks} users={users} refreshTasks={fetchAllTasks} />
-                    </motion.div>
-                );
-            case "users":
-                return (
-                    <motion.div key="users" initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}>
-                        {/* 3️⃣ TRUYỀN QUYỀN XUỐNG USER MANAGEMENT VIEW */}
-                        {/* Để bên trong đó biết có hiện nút xóa hay không */}
-                        <UserManagementView 
-                            users={users} 
-                            refreshUsers={fetchAllUsers} 
-                            currentUserRole={userRole} 
-                        />
-                    </motion.div>
-                );
-            case "logs":
-                if (userRole !== 'super_admin') return <div>Không có quyền truy cập</div>;
-                return (
-                    <motion.div key="logs" initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}>
-                        <ActivityLogView />
-                    </motion.div>
-                );
-            case "health":
-                if (userRole !== 'super_admin') return <div>Không có quyền truy cập</div>;
-                return (
-                    <motion.div key="health" initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}>
-                        <SystemHealthView />
-                    </motion.div>
-                 );
-            case "settings":
-                // Bảo vệ thêm 1 lớp ở đây: Nếu không phải super_admin mà cố tình chỉnh state để vào -> chặn
-                if (userRole !== 'super_admin') return <div>Bạn không có quyền truy cập</div>;
-                
-                return (
-                    <motion.div key="settings" initial="initial" animate="in" exit="out" variants={pageVariants} transition={pageTransition}>
-                        <SettingsView />
-                    </motion.div>
-                );
-            default:
-                return null;
-        }
-    };
-
     return (
-        <div className="flex h-screen bg-gray-50/50 relative">
-            {/* Nền Aurora (GIỮ NGUYÊN) */}
-            <div
-                className="fixed inset-0 z-0 opacity-70"
-                style={{
-                    background: `
-                        radial-gradient(ellipse 85% 65% at 8% 8%, rgba(175, 109, 255, 0.15), transparent 60%),
-                        radial-gradient(ellipse 70% 60% at 92% 92%, rgba(120, 190, 255, 0.15), transparent 62%)
-                    `,
-                }}
-            />
-
+        <div className="flex h-screen bg-[#F8F9FC] relative overflow-hidden">
             {/* Sidebar */}
-            <aside className="w-64 bg-white/70 backdrop-blur-lg border-r border-gray-200/80 flex flex-col z-10">
-                <div className="p-6 text-2xl font-bold border-b border-gray-200/80 flex items-center gap-3">
-                    <BarChart3 className="text-purple-600" />
-                    <div className="flex flex-col">
-                        <h1 className="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-500 font-extrabold">
-                            Admin
-                        </h1>
-                        {/* Hiển thị badge Super Admin cho oai */}
-                        {userRole === 'super_admin' && (
-                            <span className="text-[10px] uppercase tracking-wider text-red-500 bg-red-100 px-2 py-0.5 rounded-full w-fit mt-1">
-                                Super Admin
-                            </span>
-                        )}
+            <aside className="w-72 bg-white border-r border-gray-100 flex flex-col z-10 shadow-sm">
+                <div className="p-8 border-b border-gray-50 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-100">
+                        <BarChart3 className="text-white w-6 h-6" />
+                    </div>
+                    <div>
+                        <h1 className="text-xl font-black text-gray-800 tracking-tighter uppercase italic">Taska Admin</h1>
+                        <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded-md">Control Center</span>
                     </div>
                 </div>
 
-                <nav className="flex-1 p-4 space-y-2">
+                <nav className="flex-1 p-6 space-y-2">
                     {adminMenuItems.map((item) => (
                         <button
                             key={item.key}
                             onClick={() => (item.action ? item.action() : setCurrentView(item.key))}
-                            className={`flex items-center gap-3 px-4 py-2.5 rounded-lg w-full text-left transition-all duration-200 ${
+                            className={`flex items-center gap-4 px-5 py-3.5 rounded-2xl w-full text-left transition-all duration-300 ${
                                 currentView === item.key
-                                    ? "bg-purple-100 text-purple-700 font-semibold shadow-sm"
-                                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                                    ? "bg-indigo-600 text-white font-bold shadow-xl shadow-indigo-100 translate-x-2"
+                                    : "text-gray-400 hover:bg-gray-50 hover:text-gray-600"
                             }`}
                         >
-                            <item.icon className={`w-5 h-5 ${item.key === 'settings' ? 'text-red-400' : ''}`} />
-                            {item.label}
+                            <item.icon className="w-5 h-5" />
+                            <span className="text-xs font-black uppercase tracking-wider">{item.label}</span>
                         </button>
                     ))}
                 </nav>
                 
-                {/* Footer Sidebar (GIỮ NGUYÊN) */}
-                <div className="p-4 border-t border-gray-200/80 text-center text-xs text-gray-400">
-                    © {new Date().getFullYear()} Taska Admin
+                <div className="p-6 text-[10px] text-gray-300 font-bold uppercase text-center tracking-[0.2em]">
+                    Taska Engine v2.0
                 </div>
             </aside>
 
-            {/* Main Content (GIỮ NGUYÊN) */}
-            <main className="flex-1 p-6 md:p-8 overflow-y-auto relative">
-                <header className="mb-8">
-                    <h2 className="text-3xl font-bold text-gray-800">{viewTitles[currentView]}</h2>
+            {/* Main Content */}
+            <main className="flex-1 overflow-y-auto p-10 custom-scrollbar">
+                <header className="mb-10 flex justify-between items-center">
+                    <div>
+                        <h2 className="text-3xl font-black text-gray-800 uppercase italic tracking-tighter">
+                            {adminMenuItems.find(m => m.key === currentView)?.label}
+                        </h2>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">Hệ điều hành quản trị Taska</p>
+                    </div>
+                    {userRole === 'super_admin' && (
+                        <div className="px-4 py-2 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2">
+                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                            <span className="text-[10px] font-black text-red-600 uppercase">Super Admin Mode</span>
+                        </div>
+                    )}
                 </header>
-                
+
                 <AnimatePresence mode="wait">
-                    {renderContent()}
+                    {isLoading ? (
+                        <div className="flex flex-col items-center justify-center h-64">
+                            <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
+                            <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">Đang tải dữ liệu...</p>
+                        </div>
+                    ) : (
+                        <motion.div key={currentView} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+                            {currentView === "dashboard" && <DashboardView stats={stats} tasks={allTasks} users={users} refreshTasks={loadData} />}
+                            {currentView === "users" && <UserManagementView users={users} refreshUsers={loadData} currentUserRole={userRole} />}
+                            {currentView === "logs" && <ActivityLogView />}
+                            {currentView === "health" && <SystemHealthView />}
+                            {currentView === "settings" && <SettingsView />}
+                        </motion.div>
+                    )}
                 </AnimatePresence>
             </main>
         </div>

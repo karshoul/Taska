@@ -1,71 +1,56 @@
 import express from 'express';
 import { protect, adminGuard, superAdminGuard } from '../middleWare/authMiddleware.js';
 import { 
-    getAdminStats, 
-    getAllUsers, 
-    updateUser,
-    deleteUser,
-    changeUserRole,
-    toggleUserStatus,
-    getAllTasksForAdmin,
-    deleteTaskForAdmin,
-    getAppSettings,
-    updateAppSettings,
-    getSystemLogs,
-    getSystemHealth,
-    exportUsersToCSV,
-    exportTasksToCSV
+    getAdminStats, getAllUsers, updateUser, deleteUser, changeUserRole, toggleUserStatus,
+    getAllTasksForAdmin, deleteTaskForAdmin, getAppSettings, updateAppSettings,
+    getSystemLogs, getSystemHealth, exportUsersToCSV, exportTasksToCSV,
+    deleteProjectForAdmin, exportProjectsToExcel, cleanupOldTasks, getPublicAnnouncement
 } from '../controllers/adminController.js';
 
 const router = express.Router();
 
 // =========================================================================
-// 🛡️ LỚP BẢO VỆ 1: ADMIN & SUPER ADMIN
+// 🔓 TẦNG 0: PUBLIC/USER ACCESS (Chỉ cần đăng nhập)
 // =========================================================================
-// Tất cả các route bên dưới đều yêu cầu:
-// 1. Đã đăng nhập (protect)
-// 2. Là 'admin' HOẶC 'super_admin' (adminGuard)
+router.get('/announcement', protect, getPublicAnnouncement);
+
+
+// =========================================================================
+// 🛡️ TẦNG 1: ADMIN & SUPER ADMIN ACCESS
+// =========================================================================
 router.use(protect, adminGuard);
 
-// --- 📊 THỐNG KÊ HỆ THỐNG ---
 router.get('/stats', getAdminStats);
-
-// --- 👥 QUẢN LÝ USER (Chức năng chung) ---
-router.get('/users', getAllUsers);                 // Xem danh sách user
-router.put("/users/:id", updateUser);              // Sửa thông tin user (Tên, Email...)
-router.put("/users/:id/status", toggleUserStatus); // Khóa/Mở khóa tài khoản (Ban user)
-router.delete("/users/:id", deleteUser);
-
-// --- 📝 QUẢN LÝ TASKS/PROJECTS ---
-router.get('/tasks', getAllTasksForAdmin);      // Xem toàn bộ tasks trong hệ thống
-router.delete('/tasks/:id', deleteTaskForAdmin); // Xóa task vi phạm/spam
+router.get('/users', getAllUsers);
+router.put("/users/:id", updateUser);
+router.put("/users/:id/status", toggleUserStatus);
+router.get('/tasks', getAllTasksForAdmin);
 
 
 // =========================================================================
-// 🛡️ LỚP BẢO VỆ 2: CHỈ DÀNH RIÊNG CHO SUPER ADMIN
+// 🛡️ TẦNG 2: CHỈ DÀNH RIÊNG CHO SUPER ADMIN (Trùm cuối)
 // =========================================================================
-// Các route này cực kỳ nhạy cảm, cần thêm 'superAdminGuard' để chặn Admin thường.
+router.use(superAdminGuard); 
 
-// --- 👑 QUẢN LÝ QUYỀN HẠN & XÓA VĨNH VIỄN ---
+// Lưu ý: Từ đây trở xuống KHÔNG cần ghi lại superAdminGuard vào từng route nữa
 
-router.get('/logs', superAdminGuard, getSystemLogs);
+router.get('/logs', getSystemLogs);
+router.patch("/users/:id/role", changeUserRole);
+router.delete("/users/:id", deleteUser); 
+router.delete('/projects/:id', deleteProjectForAdmin);
 
-// Chỉ trùm cuối mới được thăng chức/giáng chức người khác
-router.patch("/users/:id/role", superAdminGuard, changeUserRole);
-
-// Chỉ trùm cuối mới được xóa vĩnh viễn user khỏi Database
-router.delete("/users/:id", superAdminGuard, deleteUser);
-
-// --- ⚙️ CẤU HÌNH HỆ THỐNG (SETTINGS) ---
+// Settings Group (Gom lại cho gọn)
 router.route('/settings')
-    .get(superAdminGuard, getAppSettings)      // Xem cấu hình
-    .put(superAdminGuard, updateAppSettings);  // Sửa cấu hình (Logo, Email server...)
+    .get(getAppSettings)
+    .put(updateAppSettings);
 
-// 1. Sức khỏe hệ thống
-router.get('/system-health', superAdminGuard, getSystemHealth);
+// System Health & Maintenance
+router.get('/system-health', getSystemHealth);
+router.post('/cleanup', cleanupOldTasks);
 
-// 2. Export dữ liệu
-router.get('/export/users', superAdminGuard, exportUsersToCSV);
-router.get('/export/tasks', superAdminGuard, exportTasksToCSV);
+// Export Group
+router.get('/export/users', exportUsersToCSV);
+router.get('/export/projects', exportProjectsToExcel);
+router.get('/export/tasks', exportTasksToCSV);
 
 export default router;

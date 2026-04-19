@@ -164,6 +164,7 @@ const TaskCard = ({ task, index, handleTaskChanged }) => {
           >
             <Trash2 className="size-4" />
           </Button>
+          
         </div>
       </div>
     </Card>
